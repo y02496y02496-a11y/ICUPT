@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "Patient": {
+      "title": "Patient",
+      "description": "Patient basic profile and reference dates for Neurosurgery PT tracking",
+      "type": "object",
+      "properties": {
+        "bedValue": { "type": "string", "description": "床號" },
+        "chartNo": { "type": "string", "description": "病歷號碼" },
+        "name": { "type": "string", "description": "姓名" },
+        "diagnosis": { "type": "string", "description": "診斷" },
+        "consultDate": { "type": "string", "description": "照會日" },
+        "replyDate": { "type": "string", "description": "回覆照會" },
+        "firstPTDate": { "type": "string", "description": "第一次介入日" },
+        "notes": { "type": "string", "description": "備註" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["bedValue", "chartNo", "name", "diagnosis"]
+    },
+    "PTLog": {
+      "title": "PTLog",
+      "description": "Daily physical therapy log of a patient, tracking daily status",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "紀錄日期 (YYYY-MM-DD)" },
+        "bedValue": { "type": "string", "description": "床號" },
+        "hasIntervention": { "type": "boolean", "description": "當天是否有介入" },
+        "noInterventionReason": { "type": "string", "description": "未介入原因" },
+        "mobilityLevel": { "type": "integer", "description": "目前體能活動量等級 (0-10)" },
+        "notes": { "type": "string", "description": "備註" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["date", "hasIntervention", "mobilityLevel"]
+    },
+    "AdminConfig": {
+      "title": "AdminConfig",
+      "description": "Configuration including hashed administrator password",
+      "type": "object",
+      "properties": {
+        "passwordHash": { "type": "string", "description": "SHA-256 hash of password" },
+        "salt": { "type": "string", "description": "Random salt value" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["passwordHash", "salt"]
+    }
+  },
+  "firestore": {
+    "patients": {
+      "schema": "Patient",
+      "description": "Collection of neurosurgery ICU patients list."
+    },
+    "patients/{patientId}/logs": {
+      "schema": "PTLog",
+      "description": "Subcollection of daily physical therapy progress logs for a specific patient."
+    },
+    "config": {
+      "schema": "AdminConfig",
+      "description": "Global administration settings and security hashes."
+    }
+  }
+}
