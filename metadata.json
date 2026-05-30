@@ -1,0 +1,6 @@
+{
+  "name": "加護病房神經外科物理治療統計系統",
+  "description": "加護病房神經外科物理治療執行率與體能活動等級(ICU Mobility Scale 0-10)統計管理及報表匯出系統，支持每月/每季指標分析與完整個案復健歷程追蹤。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
