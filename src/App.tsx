@@ -524,6 +524,12 @@ export default function App() {
                                 <td className="py-3 px-4 whitespace-nowrap">
                                   <div className="flex flex-col gap-0.5 text-[11px] font-mono text-slate-600">
                                     <div className="flex items-center gap-1">
+                                      {(pat.icuAdmissionDate || (pat as any).admissionDate) && (
+                                        <>
+                                          <span title="入ICU日" className="text-blue-500 font-medium">{pat.icuAdmissionDate || (pat as any).admissionDate}</span>
+                                          <span className="text-slate-355">➔</span>
+                                        </>
+                                      )}
                                       <span title="照會日" className="text-slate-500">{pat.consultDate || "-"}</span>
                                       <span className="text-slate-350">➔</span>
                                       <span title="回覆日" className="text-indigo-600 font-medium">{pat.replyDate || "-"}</span>
@@ -536,15 +542,26 @@ export default function App() {
                                         </>
                                       )}
                                     </div>
-                                    {pat.consultDate && pat.icuDischargeDate && (
-                                      <div className="text-[10px] text-slate-400 font-sans mt-0.5">
-                                        ICU停留天數：
-                                        <span className="font-bold text-rose-600">
-                                          {getDaysBetween(pat.consultDate, pat.icuDischargeDate)}
-                                        </span>
-                                        {" "}天
-                                      </div>
-                                    )}
+                                    <div className="flex items-center gap-2 text-[10px] text-slate-400 font-sans mt-0.5">
+                                      {pat.consultDate && pat.icuDischargeDate && (
+                                        <div>
+                                          ICU停留：
+                                          <span className="font-bold text-rose-600">
+                                            {getDaysBetween(pat.consultDate, pat.icuDischargeDate)}
+                                          </span>
+                                          {" "}天
+                                        </div>
+                                      )}
+                                      {(pat.icuAdmissionDate || (pat as any).admissionDate) && pat.icuDischargeDate && (
+                                        <div>
+                                          ICU住院：
+                                          <span className="font-bold text-blue-600">
+                                            {getDaysBetween(pat.icuAdmissionDate || (pat as any).admissionDate, pat.icuDischargeDate)}
+                                          </span>
+                                          {" "}天
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
                                 <td className="py-3 px-4">
