@@ -19,6 +19,7 @@ export default function EditPatientModal({ patient, onClose, onRefresh }: EditPa
   const [replyDate, setReplyDate] = useState(patient?.replyDate || "");
   const [firstPTDate, setFirstPTDate] = useState(patient?.firstPTDate || "");
   const [icuDischargeDate, setIcuDischargeDate] = useState(patient?.icuDischargeDate || "");
+  const [icuAdmissionDate, setIcuAdmissionDate] = useState(patient?.icuAdmissionDate || (patient as any)?.admissionDate || "");
   const [notes, setNotes] = useState(patient?.notes || "");
 
   const [submitting, setSubmitting] = useState(false);
@@ -47,6 +48,7 @@ export default function EditPatientModal({ patient, onClose, onRefresh }: EditPa
         replyDate: replyDate,
         firstPTDate: firstPTDate,
         icuDischargeDate: icuDischargeDate,
+        icuAdmissionDate: icuAdmissionDate ?? "",
         notes: notes.trim(),
         createdAt: patient ? patient.createdAt : Date.now(),
         updatedAt: Date.now(),
@@ -150,7 +152,23 @@ export default function EditPatientModal({ patient, onClose, onRefresh }: EditPa
           </div>
 
           {/* Reference Dates Milestones */}
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1" htmlFor="pat-admission-input">入ICU日期</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-2 px-1 flex items-center pointer-events-none text-slate-400">
+                  <Calendar className="w-3.5 h-3.5" />
+                </div>
+                <input
+                  id="pat-admission-input"
+                  type="date"
+                  value={icuAdmissionDate}
+                  onChange={(e) => setIcuAdmissionDate(e.target.value)}
+                  className="block w-full pl-7 pr-1 py-2 border border-slate-300 rounded-lg bg-slate-50 text-[11px] text-slate-800 outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+                />
+              </div>
+            </div>
+
             <div>
               <label className="block text-[11px] font-bold text-slate-700 mb-1" htmlFor="pat-consult-input">照會日期</label>
               <div className="relative">
@@ -199,7 +217,7 @@ export default function EditPatientModal({ patient, onClose, onRefresh }: EditPa
               </div>
             </div>
 
-            <div>
+            <div className="col-span-2 sm:col-span-1">
               <label className="block text-[11px] font-bold text-slate-700 mb-1" htmlFor="pat-icu-discharge-input">轉出加護病房</label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-2 px-1 flex items-center pointer-events-none text-slate-400">
