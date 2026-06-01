@@ -1,1 +1,52 @@
 @import "tailwindcss";
+
+@media print {
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11px !important;
+  }
+
+  /* Hide tabs, filters, inputs, and other screen-specific interactive elements */
+  .no-print,
+  #app-header,
+  #filter-bento,
+  #charts-container,
+  #reports-tables-container,
+  #mobility-guide-footer,
+  .inline-flex,
+  button,
+  select,
+  input,
+  textarea,
+  a {
+    display: none !important;
+  }
+
+  /* Overwrite print elements container styling */
+  .print-only {
+    display: block !important;
+  }
+
+  /* Prevent elements from separating awkwardly on separate pages */
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Ensure colors and background colors are retained in saving as PDF */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Standard padding for print margins */
+  @page {
+    size: A4 portrait;
+    margin: 1.5cm;
+  }
+}
+
+.print-only {
+  display: none;
+}
