@@ -83,10 +83,13 @@ export default function PatientDetailView({
     const currentLevel = sortedLevels.length > 0 ? sortedLevels[sortedLevels.length - 1] : null;
 
     // Milestone days
+    const icuAdmissionDate = patient.icuAdmissionDate || (patient as any).admissionDate || "";
+    const admissionToConsultDays = getDaysBetween(icuAdmissionDate, patient.consultDate);
     const recruitToReplyDays = getDaysBetween(patient.consultDate, patient.replyDate);
     const replyToFirstPTDays = getDaysBetween(patient.replyDate, patient.firstPTDate);
     const icuStayDays = getDaysBetween(patient.consultDate, patient.icuDischargeDate);
     const firstPTToDischargeDays = getDaysBetween(patient.firstPTDate, patient.icuDischargeDate);
+    const totalHospitalDays = getDaysBetween(icuAdmissionDate, patient.icuDischargeDate);
 
     return {
       total: totalCount,
@@ -95,10 +98,12 @@ export default function PatientDetailView({
       startLevel,
       maxLevel,
       currentLevel,
+      admissionToConsultDays,
       recruitToReplyDays,
       replyToFirstPTDays,
       icuStayDays,
       firstPTToDischargeDays,
+      totalHospitalDays,
     };
   }, [logs, chronologicalLogs, patient]);
 
@@ -245,13 +250,30 @@ export default function PatientDetailView({
         </div>
 
         {/* Process Milestone Milestones Dates */}
-        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 md:grid-cols-5 gap-3.5 text-xs">
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
+            <span className="text-slate-400 font-bold tracking-wide">入ICU日期</span>
+            <div className="text-slate-700 font-bold flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-blue-500" />
+              {patient.icuAdmissionDate || (patient as any).admissionDate || "未設定"}
+            </div>
+            {patientStats.totalHospitalDays !== null && (
+              <span className="text-[10px] text-slate-400 block pt-0.5">
+                ICU住院累計：<strong className="text-blue-600 font-bold">{patientStats.totalHospitalDays}</strong> 天
+              </span>
+            )}
+          </div>
           <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
             <span className="text-slate-400 font-bold tracking-wide">照會日期</span>
             <div className="text-slate-700 font-bold flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               {patient.consultDate || "未設定"}
             </div>
+            {patientStats.admissionToConsultDays !== null && (
+              <span className="text-[10px] text-slate-400 block pt-0.5">
+                入ICU➔照會：<strong className="text-slate-600 font-bold">{patientStats.admissionToConsultDays}</strong> 天
+              </span>
+            )}
           </div>
           <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
             <span className="text-slate-400 font-bold tracking-wide">醫師回覆照會</span>
@@ -261,7 +283,7 @@ export default function PatientDetailView({
             </div>
             {patientStats.recruitToReplyDays !== null && (
               <span className="text-[10px] text-slate-400 block pt-0.5">
-                費時：<strong className="text-indigo-600 font-bold">{patientStats.recruitToReplyDays}</strong> 天
+                照會➔回覆：<strong className="text-indigo-600 font-bold">{patientStats.recruitToReplyDays}</strong> 天
               </span>
             )}
           </div>
@@ -273,11 +295,11 @@ export default function PatientDetailView({
             </div>
             {patientStats.replyToFirstPTDays !== null && (
               <span className="text-[10px] text-slate-400 block pt-0.5">
-                回覆後：<strong className="text-emerald-600 font-bold">{patientStats.replyToFirstPTDays}</strong> 天開案
+                回覆➔執行：<strong className="text-emerald-600 font-bold">{patientStats.replyToFirstPTDays}</strong> 天
               </span>
             )}
           </div>
-          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1 col-span-2 md:col-span-1">
             <span className="text-slate-400 font-bold tracking-wide">轉出加護病房</span>
             <div className="text-slate-700 font-bold flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-rose-500" />
