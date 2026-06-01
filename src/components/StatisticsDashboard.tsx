@@ -24,7 +24,11 @@ import {
   Clock,
   BriefcaseMedical,
   FileOutput,
-  Info
+  Info,
+  Printer,
+  FileText,
+  Search,
+  SlidersHorizontal
 } from "lucide-react";
 
 interface StatisticsDashboardProps {
@@ -39,6 +43,29 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
   const [selectedMonth, setSelectedMonth] = useState<string>("2026-05");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
+
+  // New filters: specific patient selection and physical mobility level selection
+  const [selectedPatientId, setSelectedPatientId] = useState<string>("all");
+  const [selectedMobilityLevel, setSelectedMobilityLevel] = useState<string>("all");
+  const [dashboardSearchQuery, setDashboardSearchQuery] = useState<string>("");
+
+  // Helper list to search and filter the drops for patient dropdown
+  const filteredPatientDropdownList = useMemo(() => {
+    const query = dashboardSearchQuery.trim().toLowerCase();
+    if (!query) return patients;
+    return patients.filter(
+      (p) =>
+        p.name.toLowerCase().includes(query) ||
+        p.bedValue.toLowerCase().includes(query) ||
+        p.chartNo.toLowerCase().includes(query)
+    );
+  }, [patients, dashboardSearchQuery]);
+
+  // Selected patient object
+  const selectedPatientObj = useMemo(() => {
+    if (selectedPatientId === "all") return null;
+    return patients.find((p) => p.id === selectedPatientId) || null;
+  }, [patients, selectedPatientId]);
 
   // Flatten all logs with patient information attached
   const processedLogs = useMemo(() => {
@@ -59,9 +86,18 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
     return list.sort((a, b) => b.date.localeCompare(a.date));
   }, [patients, allLogs]);
 
-  // Apply visual time-range filters
+  // Apply visual time-range and custom selection filters (patient name, mobility level)
   const filteredLogs = useMemo(() => {
     return processedLogs.filter((log) => {
+      // 1. Patient selection filter
+      if (selectedPatientId !== "all" && log.patientId !== selectedPatientId) {
+        return false;
+      }
+      // 2. Mobility level filter
+      if (selectedMobilityLevel !== "all" && String(log.mobilityLevel) !== selectedMobilityLevel) {
+        return false;
+      }
+      // 3. Time period filter
       if (filterType === "all") return true;
       if (filterType === "year") {
         return log.date.startsWith(selectedYear);
@@ -76,13 +112,26 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       }
       return true;
     });
-  }, [processedLogs, filterType, selectedYear, selectedMonth, startDate, endDate]);
+  }, [processedLogs, filterType, selectedYear, selectedMonth, startDate, endDate, selectedPatientId, selectedMobilityLevel]);
 
   // Derived filtered patients (patients that have records in filtered logs, or matches dates)
   const filteredPatients = useMemo(() => {
-    if (filterType === "all") return patients;
+    // If a specific patient is filtered, return just that patient
+    if (selectedPatientId !== "all") {
+      return patients.filter((p) => p.id === selectedPatientId);
+    }
+
+    if (filterType === "all") {
+      let list = patients;
+      if (selectedMobilityLevel !== "all") {
+        const patientIdsWithLevel = new Set(processedLogs.filter(log => String(log.mobilityLevel) === selectedMobilityLevel).map(log => log.patientId));
+        list = list.filter((p) => patientIdsWithLevel.has(p.id));
+      }
+      return list;
+    }
+
     const patientIdsInPeriod = new Set(filteredLogs.map((log) => log.patientId));
-    return patients.filter((p) => {
+    let result = patients.filter((p) => {
       // Either has logs in selected period, or was active (consulted/entered)
       const matchesPeriod = patientIdsInPeriod.has(p.id);
       if (matchesPeriod) return true;
@@ -101,7 +150,14 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       }
       return false;
     });
-  }, [patients, filteredLogs, filterType, selectedYear, selectedMonth, startDate, endDate]);
+
+    if (selectedMobilityLevel !== "all") {
+      const patientIdsWithLevel = new Set(filteredLogs.filter(log => String(log.mobilityLevel) === selectedMobilityLevel).map(log => log.patientId));
+      result = result.filter((p) => patientIdsWithLevel.has(p.id));
+    }
+
+    return result;
+  }, [patients, filteredLogs, filterType, selectedYear, selectedMonth, startDate, endDate, selectedPatientId, selectedMobilityLevel, processedLogs]);
 
   // 1. Calculate Physical Therapy Execution Rate (復健介入執行率)
   const executionStats = useMemo(() => {
@@ -374,11 +430,13 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
         "病歷號碼",
         "姓名",
         "診斷說明",
+        "入ICU日期",
         "收案照會日期",
         "回覆照會日期",
         "第一次介入日期",
         "轉出加護病房日期",
         "停留ICU天數",
+        "ICU住院累計天數",
         "當天是否有治療介入",
         "未介入原因",
         "目前體能活動等級(ICU Mobility Scale)",
@@ -388,17 +446,20 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       rows = filteredLogs.map((log) => {
         const patient = patients.find((p) => p.id === log.patientId);
         const icuStay = patient ? getDaysBetween(patient.consultDate, patient.icuDischargeDate) : null;
+        const hospStay = patient ? getDaysBetween(patient.icuAdmissionDate || (patient as any).admissionDate, patient.icuDischargeDate) : null;
         return [
           log.date,
           log.bedValue || patient?.bedValue || "",
           patient?.chartNo || "",
           patient?.name || "",
           (patient?.diagnosis || "").replace(/,/g, "，"),
+          patient ? (patient.icuAdmissionDate || (patient as any).admissionDate || "") : "",
           patient?.consultDate || "",
           patient?.replyDate || "",
           patient?.firstPTDate || "",
           patient?.icuDischargeDate || "",
           icuStay !== null ? String(icuStay) : "",
+          hospStay !== null ? String(hospStay) : "",
           log.hasIntervention ? "是" : "否",
           (log.noInterventionReason || "無").replace(/,/g, "，"),
           String(log.mobilityLevel),
@@ -481,6 +542,15 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
             >
               自訂區間
             </button>
+
+            <button
+              onClick={() => window.print()}
+              className="px-3.5 py-1.5 rounded-lg text-xs font-bold ring-1 ring-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 cursor-pointer transition-all flex items-center justify-center gap-1.5 ml-0 md:ml-2 shadow-sm"
+              title="將儀表板完整臨床統計數據與收案名單輸出為 PDF"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              匯出 PDF 報表
+            </button>
           </div>
         </div>
 
@@ -542,6 +612,83 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
             )}
           </div>
         )}
+
+        {/* Individual Patient Search & Overall Mobility Level Filter Row */}
+        <div className="mt-4 pt-4 border-t border-slate-150 grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Patient Selector Bento */}
+          <div className="bg-slate-50 rounded-lg p-3.5 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2">
+              <Search className="w-4 h-4 text-teal-600" />
+              <label className="text-xs font-bold text-slate-700 block">
+                個案檢索與單一儀表板查詢
+              </label>
+            </div>
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="輸入姓名、床號、病歷號篩選下拉清單..."
+                value={dashboardSearchQuery}
+                onChange={(e) => setDashboardSearchQuery(e.target.value)}
+                className="w-full text-xs border border-slate-300 rounded-lg p-2 bg-white text-slate-850 outline-none focus:ring-1 focus:ring-teal-500"
+              />
+              <select
+                value={selectedPatientId}
+                onChange={(e) => setSelectedPatientId(e.target.value)}
+                className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2 bg-white text-slate-800 outline-none cursor-pointer focus:ring-1 focus:ring-teal-500"
+              >
+                <option value="all">📊 顯示全體個案合併統計</option>
+                {filteredPatientDropdownList.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    【{p.bedValue}床】{p.name} ({p.chartNo})
+                  </option>
+                ))}
+              </select>
+            </div>
+            {selectedPatientObj && (
+              <div className="p-2.5 bg-teal-50/70 border border-teal-100 rounded-md flex items-center justify-between text-[11px] text-teal-800 animate-fadeIn">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span>💡 正在觀察【{selectedPatientObj.bedValue}床】{selectedPatientObj.name} 的專屬臨床歷程（住院/ICU天數分析）</span>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedPatientId("all");
+                    setDashboardSearchQuery("");
+                  }}
+                  className="px-2 py-0.5 bg-white text-teal-700 ring-1 ring-teal-200 hover:bg-teal-100 text-[10px] rounded font-semibold transition-all cursor-pointer"
+                >
+                  清除單一篩選
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Mobility Level Selector Bento */}
+          <div className="bg-slate-50 rounded-lg p-3.5 border border-slate-200 space-y-2">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-4 h-4 text-teal-600" />
+              <label className="text-xs font-bold text-slate-700 block">
+                整體個案各體能活動等級篩選
+              </label>
+            </div>
+            <div className="space-y-2 lg:pt-1">
+              <select
+                value={selectedMobilityLevel}
+                onChange={(e) => setSelectedMobilityLevel(e.target.value)}
+                className="w-full text-xs font-medium border border-slate-300 rounded-lg p-2 bg-white text-slate-800 outline-none cursor-pointer focus:ring-1 focus:ring-teal-500"
+              >
+                <option value="all">📶 顯示所有體能活動等級 (0 至 10 級)</option>
+                {Object.entries(ICU_MOBILITY_LEVELS).map(([level, info]) => (
+                  <option key={level} value={level}>
+                    等級 {level}：{info.name} — ({info.definition})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[10px] text-slate-400">
+                臨床解讀：選定單一等級後，系統將精準篩選該體能活動基準下之指標、月報、季報與個案歷史明細。
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI Metric Overview Grid */}
@@ -896,7 +1043,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       </div>
 
       {/* Guide details about Mobility Scale */}
-      <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 shrink-0 flex gap-2.5 items-start">
+      <div id="mobility-guide-footer" className="bg-slate-50 rounded-xl border border-slate-200 p-4 shrink-0 flex gap-2.5 items-start">
         <Info className="w-5 h-5 text-slate-400 mt-0.5 shrink-0" />
         <div className="space-y-1">
           <h5 className="text-xs font-bold text-slate-700">ICU 體能活動等級標準指引</h5>
@@ -905,6 +1052,197 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
             定義包括：0級完全臥床（無主動出力）、1級床上活動（主動翻身/拱橋）、2級被動下床（用移植機坐椅）、
             3級床邊坐起、4級站立（雙腳承重）、5級轉位至椅、6級原地踏步（床邊踏步&gt;=4次）、7-10級為不同支持下之行走指標。
           </p>
+        </div>
+      </div>
+
+      {/* ========================================================== */}
+      {/* CLINICAL REPORT PRINT OUT (PRINT-ONLY LAYOUT FOR PDF)       */}
+      {/* ========================================================== */}
+      <div className="print-only hidden pt-6 p-4 space-y-6 font-sans text-xs bg-white text-black leading-relaxed">
+        {/* Report Title Header */}
+        <div className="border-b-2 border-slate-900 pb-4 text-center">
+          <h2 className="text-xl font-bold tracking-tight text-slate-900">加護病房神經外科物理治療復健品質與績效統計報表</h2>
+          <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider">ICU Neurosurgery Physical Therapy Quality Ledger & Efficacy Audit Report</p>
+          <div className="flex justify-between items-center text-[10px] text-slate-500 mt-4 leading-none">
+            <span>製表日期：{new Date().toLocaleDateString('zh-TW')}</span>
+            <span>篩選時間區間：{filterType === "all" ? "全部時間" : filterType === "year" ? `${selectedYear} 年` : filterType === "month" ? `${selectedMonth}` : `自訂區間 (${startDate || "起始"} 至 ${endDate || "結束"})`}</span>
+            <span>列印人員：臨床專業物理治療團隊</span>
+          </div>
+        </div>
+
+        {/* Part 1: KPI Statistics Overview */}
+        <div className="space-y-2">
+          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide border-l-2 border-slate-950 pl-1.5">一、核心指標與醫療品質摘要</h3>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">收案病患人數 (個案統計)</span>
+              <span className="text-base font-extrabold text-slate-900 mt-1 block">{filteredPatients.length} <span className="text-xs font-normal text-slate-500">人</span></span>
+            </div>
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">評估與評分日 (記錄人次)</span>
+              <span className="text-base font-extrabold text-slate-900 mt-1 block">{filteredLogs.length} <span className="text-xs font-normal text-slate-500">人次</span></span>
+            </div>
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">物理治療核心介入率</span>
+              <span className="text-base font-extrabold text-slate-900 mt-1 block">
+                {filteredLogs.length > 0 
+                  ? ((filteredLogs.filter(l => l.hasIntervention).length / filteredLogs.length) * 100).toFixed(1) 
+                  : "0"}%
+              </span>
+            </div>
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">轉出加護病房結案人數</span>
+              <span className="text-base font-extrabold text-slate-905 mt-1 block">{icuStayStats.dischargedCount} <span className="text-xs font-normal text-slate-500">人</span></span>
+            </div>
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">平均 ICU 停留天數</span>
+              <span className="text-base font-extrabold text-slate-900 mt-1 block">{icuStayStats.avgStayDays} <span className="text-xs font-normal text-slate-500">天</span></span>
+            </div>
+            <div className="border border-slate-300 p-2.5 rounded bg-slate-50">
+              <span className="text-[10px] text-slate-500 font-bold block">平均物理治療至出加護病房</span>
+              <span className="text-base font-extrabold text-teal-800 mt-1 block">{icuStayStats.avgPTtoDischargeDays} <span className="text-xs font-normal text-slate-500">天</span></span>
+            </div>
+          </div>
+        </div>
+
+        {/* Part 2: Monthly performance indicators */}
+        <div className="space-y-2 print-avoid-break">
+          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide border-l-2 border-slate-950 pl-1.5">二、每月績效指標與執行率統計表</h3>
+          <table className="w-full text-left border-collapse border border-slate-400 text-[10px]">
+            <thead>
+              <tr className="bg-slate-100 text-slate-800 border-b border-slate-400">
+                <th className="py-1.5 px-2 border-r border-slate-400 font-bold">月份</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">收案人數</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">每日紀錄人次</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">物理治療介入率</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">平均體能等級(ICU Mobility Scale)</th>
+                <th className="py-1.5 px-2 font-bold">核心未加入原因</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-300 bg-white">
+              {monthlyStatsTable.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-slate-400">尚無歷史月度數據</td>
+                </tr>
+              ) : (
+                monthlyStatsTable.map((item) => (
+                  <tr key={item.period} className="border-b border-slate-300">
+                    <td className="py-1.5 px-2 border-r border-slate-300 font-semibold">{item.period}</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center">{item.patientsCount} 人</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center">{item.logsCount} 次</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center font-bold">{item.execRate}</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center font-mono">{item.avgMobility}</td>
+                    <td className="py-1.5 px-2 text-slate-600">{item.topReason}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Part 3: Quarterly stats table */}
+        <div className="space-y-2 print-avoid-break">
+          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide border-l-2 border-slate-950 pl-1.5">三、每季目標管理與品質指標統計報表</h3>
+          <table className="w-full text-left border-collapse border border-slate-400 text-[10px]">
+            <thead>
+              <tr className="bg-slate-100 text-slate-800 border-b border-slate-400">
+                <th className="py-1.5 px-2 border-r border-slate-400 font-bold">季度</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">收案人數</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">每日紀錄人次</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">物理治療介入率</th>
+                <th className="py-1.5 px-2 border-r border-slate-400 text-center font-bold">平均體能等級(ICU Mobility Scale)</th>
+                <th className="py-1.5 px-2 font-bold">主要未介入原因</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-300 bg-white">
+              {quarterlyStatsTable.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="py-4 text-center text-slate-400">目前尚無歷史季度數據</td>
+                </tr>
+              ) : (
+                quarterlyStatsTable.map((item) => (
+                  <tr key={item.period} className="border-b border-slate-300">
+                    <td className="py-1.5 px-2 border-r border-slate-300 font-semibold">{item.period}</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center">{item.patientsCount} 人</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center">{item.logsCount} 次</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center font-bold">{item.execRate}</td>
+                    <td className="py-1.5 px-2 border-r border-slate-300 text-center font-mono">{item.avgMobility}</td>
+                    <td className="py-1.5 px-2 text-slate-600">{item.topReason}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Part 4: Clinical Patient Registry Details */}
+        <div className="space-y-2 print-avoid-break">
+          <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wide border-l-2 border-slate-950 pl-1.5">四、加護病房物理治療收案個案追蹤名冊 (入ICU日與停留天數分析)</h3>
+          <table className="w-full text-left border-collapse border border-slate-400 text-[9px]">
+            <thead>
+              <tr className="bg-slate-100 text-slate-800 border-b border-slate-400">
+                <th className="py-1 px-1.5 border-r border-slate-400 text-center font-bold">床號</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 font-bold">姓名</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 font-bold">病歷號</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 font-bold">診斷說明</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 text-center font-bold">入ICU日期</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 text-center font-bold">照會日期</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 text-center font-bold">介入日期</th>
+                <th className="py-1 px-1.5 border-r border-slate-400 text-center font-bold">加護轉出</th>
+                <th className="py-1 px-1.5 text-center font-bold">ICU 停留 / ICU 住院</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-300 bg-white">
+              {filteredPatients.length === 0 ? (
+                <tr>
+                  <td colSpan={9} className="py-3 text-center text-slate-400">無符合當前篩選條件之收案名單</td>
+                </tr>
+              ) : (
+                filteredPatients.map((pat) => {
+                  const icuDays = getDaysBetween(pat.consultDate, pat.icuDischargeDate);
+                  const hospDays = getDaysBetween(pat.icuAdmissionDate || (pat as any).admissionDate, pat.icuDischargeDate);
+                  return (
+                    <tr key={pat.id} className="border-b border-slate-300">
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-center font-semibold font-mono">{pat.bedValue}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 font-bold">{pat.name}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 font-mono">{pat.chartNo}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-slate-700 max-w-[125px] truncate" title={pat.diagnosis}>{pat.diagnosis}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.icuAdmissionDate || (pat as any).admissionDate || "-"}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.consultDate || "-"}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.firstPTDate || "-"}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.icuDischargeDate || "加護中/未轉出"}</td>
+                      <td className="py-1 px-1.5 text-center font-mono">
+                        <span className="text-rose-600 font-bold">{icuDays !== null ? `${icuDays}天` : "-"}</span>
+                        {" / "}
+                        <span className="text-blue-600 font-bold">{hospDays !== null ? `${hospDays}天` : "-"}</span>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Part 5: Signature block */}
+        <div className="pt-8 border-t border-dashed border-slate-400 print-avoid-break">
+          <div className="grid grid-cols-3 gap-8 text-center text-[10px] text-slate-800">
+            <div className="space-y-12">
+              <p>專業物理治療主管核章 (Rehab Supervisor)</p>
+              <div className="border-t border-slate-400 w-40 mx-auto pt-1 font-mono text-slate-450">簽章日期：    年    月    日</div>
+            </div>
+            <div className="space-y-12">
+              <p>神經外科 ICU 主任核簽 (NS ICU Director)</p>
+              <div className="border-t border-slate-400 w-40 mx-auto pt-1 font-mono text-slate-450">簽章日期：    年    月    日</div>
+            </div>
+            <div className="space-y-12">
+              <p>復健科部醫療總監核章 (Department Director)</p>
+              <div className="border-t border-slate-400 w-40 mx-auto pt-1 font-mono text-slate-450">簽章日期：    年    月    日</div>
+            </div>
+          </div>
+          <div className="text-center text-[9px] text-slate-400 mt-8">
+            * 本統計報表為臨床品管與績效統計專用審查依據，資料來源經系統安全核簽及稽核。 (Confidential Quality Assurance document)
+          </div>
         </div>
       </div>
     </div>
