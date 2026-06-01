@@ -12,6 +12,7 @@ export interface Patient {
   replyDate: string; // 回覆照會日期 (YYYY-MM-DD or empty)
   firstPTDate: string; // 第一次執行日期 (YYYY-MM-DD or empty)
   icuDischargeDate: string; // 轉出加護病房日期 (YYYY-MM-DD or empty)
+  icuAdmissionDate: string; // 入ICU日期 (YYYY-MM-DD or empty)
   notes: string; // 備註
   createdAt: number; // millisecond timestamp
   updatedAt: number; // millisecond timestamp
