@@ -418,7 +418,7 @@ export default function App() {
 
             {/* Tab 1: Indicators Visualizations Dashboard */}
             {activeTab === "dashboard" && (
-              <StatisticsDashboard patients={patients} allLogs={allLogs} />
+              <StatisticsDashboard patients={patients} allLogs={allLogs} isAdmin={isAdmin} />
             )}
 
             {/* Tab 2: Patients Management and Daily assessments list */}
@@ -519,7 +519,7 @@ export default function App() {
                                   {pat.name}
                                 </td>
                                 <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
-                                  {pat.chartNo}
+                                  {isAdmin ? pat.chartNo : "******"}
                                 </td>
                                 <td className="py-3 px-4 max-w-[200px] truncate text-slate-600" title={pat.diagnosis}>
                                   {pat.diagnosis}
