@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
-import { Patient, PTLog, ICU_MOBILITY_LEVELS, COMMON_NO_INTERVENTION_REASONS } from "../types";
-import { getDaysBetween, getWeekdayDaysBetween } from "../utils";
+import { Patient, PTLog, ICU_MOBILITY_LEVELS, COMMON_NO_INTERVENTION_REASONS, RASS_SCORES, GCS_EYE_OPTIONS, GCS_VERBAL_OPTIONS, GCS_MOTOR_OPTIONS } from "../types";
+import { getDaysBetween, getWeekdayDaysBetween, getGcsSeverity } from "../utils";
 import { doc, setDoc, deleteDoc, collection } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import {
@@ -58,6 +58,10 @@ export default function PatientDetailView({
   const [logMobilityLevel, setLogMobilityLevel] = useState<number>(0);
   const [logNotes, setLogNotes] = useState("");
   const [logMaxInspiratoryPressure, setLogMaxInspiratoryPressure] = useState("");
+  const [logRassScore, setLogRassScore] = useState<number | "">("");
+  const [logGcsEye, setLogGcsEye] = useState<number | "">("");
+  const [logGcsVerbal, setLogGcsVerbal] = useState<number | "">("");
+  const [logGcsMotor, setLogGcsMotor] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -119,6 +123,10 @@ export default function PatientDetailView({
     setLogMobilityLevel(patientStats.currentLevel !== null ? patientStats.currentLevel : 0);
     setLogNotes("");
     setLogMaxInspiratoryPressure("");
+    setLogRassScore("");
+    setLogGcsEye("");
+    setLogGcsVerbal("");
+    setLogGcsMotor("");
     setFormError("");
     setShowLogForm(true);
   }
@@ -142,6 +150,10 @@ export default function PatientDetailView({
     setLogMobilityLevel(log.mobilityLevel);
     setLogNotes(log.notes);
     setLogMaxInspiratoryPressure(log.maxInspiratoryPressure != null ? String(log.maxInspiratoryPressure) : "");
+    setLogRassScore(log.rassScore != null ? log.rassScore : "");
+    setLogGcsEye(log.gcsEye != null ? log.gcsEye : "");
+    setLogGcsVerbal(log.gcsVerbal != null ? log.gcsVerbal : "");
+    setLogGcsMotor(log.gcsMotor != null ? log.gcsMotor : "");
     setFormError("");
     setShowLogForm(true);
   }
@@ -171,6 +183,31 @@ export default function PatientDetailView({
       }
     }
 
+    let rassValue: number | null = null;
+    if (logRassScore !== "") {
+      rassValue = Number(logRassScore);
+    }
+
+    let gcsEValue: number | null = null;
+    if (logGcsEye !== "") {
+      gcsEValue = Number(logGcsEye);
+    }
+
+    let gcsVValue: number | null = null;
+    if (logGcsVerbal !== "") {
+      gcsVValue = Number(logGcsVerbal);
+    }
+
+    let gcsMValue: number | null = null;
+    if (logGcsMotor !== "") {
+      gcsMValue = Number(logGcsMotor);
+    }
+
+    let gcsTotalValue: number | null = null;
+    if (gcsEValue !== null && gcsVValue !== null && gcsMValue !== null) {
+      gcsTotalValue = gcsEValue + gcsVValue + gcsMValue;
+    }
+
     try {
       setSubmitting(true);
       const logId = editingLog ? editingLog.id : `log_${Date.now()}`;
@@ -183,6 +220,11 @@ export default function PatientDetailView({
         noInterventionReason: finalReason,
         mobilityLevel: logHasIntervention ? Number(logMobilityLevel) : 0,
         maxInspiratoryPressure: mipValue,
+        rassScore: rassValue,
+        gcsEye: gcsEValue,
+        gcsVerbal: gcsVValue,
+        gcsMotor: gcsMValue,
+        gcsTotal: gcsTotalValue,
         notes: logNotes,
         createdAt: editingLog ? editingLog.createdAt : Date.now(),
         updatedAt: Date.now(),
@@ -250,7 +292,7 @@ export default function PatientDetailView({
                   {patient.bedValue} 床
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-1">病歷號碼：{patient.chartNo}</p>
+              <p className="text-xs text-slate-300 mt-1">病歷號碼：{isAdmin ? patient.chartNo : "******"}</p>
             </div>
           </div>
 
@@ -432,6 +474,8 @@ export default function PatientDetailView({
                 <th className="py-3 px-4">當日介入</th>
                 <th className="py-3 px-4">未介入原因</th>
                 <th className="py-3 px-4">目前體能等級狀況 (ICU Mobility Scale)</th>
+                <th className="py-3 px-4 text-center">GCS 意識評估</th>
+                <th className="py-3 px-4 text-center">RASS 躁動程度</th>
                 <th className="py-3 px-4 text-center">最大吸氣壓 (MIP)</th>
                 <th className="py-3 px-4">日誌/備註</th>
                 {isAdmin && <th className="py-3 px-4 text-center">操作權限</th>}
@@ -440,7 +484,7 @@ export default function PatientDetailView({
             <tbody className="divide-y divide-slate-100 text-xs">
               {reverseLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-slate-400 font-medium">
+                  <td colSpan={isAdmin ? 10 : 9} className="py-12 text-center text-slate-400 font-medium">
                     尚無這名病患的每日床邊記錄，請點選右上角「新增每日床邊評估記錄」起案。
                   </td>
                 </tr>
@@ -481,7 +525,42 @@ export default function PatientDetailView({
                             <span className="text-[10px] text-slate-400 hidden sm:inline">({levelInfo?.definition})</span>
                           </div>
                         ) : (
-                          <span className="text-slate-350 font-semibold text-xs">-</span>
+                          <span className="text-slate-355 font-semibold text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center font-semibold">
+                        {log.gcsTotal != null ? (
+                          (() => {
+                            const sev = getGcsSeverity(log.gcsTotal);
+                            return (
+                              <div className="flex flex-col items-center gap-0.5 justify-center">
+                                <span className="font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap">
+                                  E{log.gcsEye}V{log.gcsVerbal}M{log.gcsMotor} = {log.gcsTotal}分
+                                </span>
+                                <span className={`text-[8.5px] font-bold px-1.5 py-px border rounded whitespace-nowrap scale-95 opacity-90 ${sev?.color || "bg-slate-100"}`}>
+                                  {sev?.name}
+                                </span>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-slate-300 font-normal">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {log.rassScore != null ? (
+                          (() => {
+                            const info = RASS_SCORES[log.rassScore];
+                            return (
+                              <div className="flex flex-col items-center justify-center">
+                                <span className={`inline-block text-[9.5px] font-bold px-2 py-0.5 border rounded-full whitespace-nowrap ${info?.color || "bg-slate-100 text-slate-700 border-slate-200"}`}>
+                                  {info?.name}
+                                </span>
+                              </div>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-slate-300 font-normal">-</span>
                         )}
                       </td>
                       <td className="py-3 px-4 text-center font-bold text-slate-700 whitespace-nowrap font-mono">
@@ -689,6 +768,117 @@ export default function PatientDetailView({
                       </span>
                     </div>
                   </div>
+                </div>
+              </div>
+
+              {/* RASS & GCS Assessments Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-200/80 pt-4">
+                {/* RASS Section */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-3">
+                  <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                    <h4 className="text-xs font-bold text-slate-800">RASS 躁動程度與鎮靜評估</h4>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 mb-1" htmlFor="rass-select">
+                      RASS 評分對照 (+4 到 -5)
+                    </label>
+                    <select
+                      id="rass-select"
+                      value={logRassScore}
+                      onChange={(e) => setLogRassScore(e.target.value === "" ? "" : Number(e.target.value))}
+                      className="block w-full text-xs p-2 border border-slate-300 rounded-lg bg-white font-medium outline-none text-slate-800 focus:ring-1 focus:ring-teal-500"
+                    >
+                      <option value="">-- 未量測 / 不適用 --</option>
+                      {Object.entries(RASS_SCORES).map(([score, info]) => (
+                        <option key={score} value={score}>
+                          [{Number(score) > 0 ? `+${score}` : score}] {info.name.replace(/^[+-]?\d+\s*/, '')}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {logRassScore !== "" && (
+                    <div className={`p-2.5 rounded-lg border text-xs font-medium ${RASS_SCORES[Number(logRassScore)]?.color || "bg-slate-100"}`}>
+                      <div className="font-bold flex items-center justify-between mb-0.5">
+                        <span>目前評分：{Number(logRassScore) > 0 ? `+${logRassScore}` : logRassScore} 分</span>
+                        <span className="text-[10px] bg-white/75 px-1.5 py-0.5 rounded shadow-sm font-sans text-slate-700">對照指標</span>
+                      </div>
+                      <p className="text-[10px] leading-relaxed opacity-90">{RASS_SCORES[Number(logRassScore)]?.definition}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* GCS Section */}
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3.5 space-y-3">
+                  <div className="flex items-center gap-1.5 border-b border-slate-200 pb-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                    <h4 className="text-xs font-bold text-slate-800">GCS 格拉斯哥昏迷指數評估 (滿分15)</h4>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1" htmlFor="gcs-eye-select">E (睜眼)</label>
+                      <select
+                        id="gcs-eye-select"
+                        value={logGcsEye}
+                        onChange={(e) => setLogGcsEye(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="block w-full text-[11px] p-2 border border-slate-300 rounded-lg bg-white outline-none text-slate-800 font-mono focus:ring-1 focus:ring-teal-500"
+                      >
+                        <option value="">未評</option>
+                        {GCS_EYE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.value} 分</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1" htmlFor="gcs-verbal-select">V (語言)</label>
+                      <select
+                        id="gcs-verbal-select"
+                        value={logGcsVerbal}
+                        onChange={(e) => setLogGcsVerbal(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="block w-full text-[11px] p-2 border border-slate-300 rounded-lg bg-white outline-none text-slate-800 font-mono focus:ring-1 focus:ring-teal-500"
+                      >
+                        <option value="">未評</option>
+                        {GCS_VERBAL_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.value} 分</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1" htmlFor="gcs-motor-select">M (運動)</label>
+                      <select
+                        id="gcs-motor-select"
+                        value={logGcsMotor}
+                        onChange={(e) => setLogGcsMotor(e.target.value === "" ? "" : Number(e.target.value))}
+                        className="block w-full text-[11px] p-2 border border-slate-300 rounded-lg bg-white outline-none text-slate-800 font-mono focus:ring-1 focus:ring-teal-500"
+                      >
+                        <option value="">未評</option>
+                        {GCS_MOTOR_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>{opt.value} 分</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* E V M descriptions details */}
+                  <div className="text-[10px] text-slate-500 font-normal space-y-1 bg-white p-2 rounded border border-slate-200">
+                    <div>E: {logGcsEye !== "" ? GCS_EYE_OPTIONS.find(o => o.value === logGcsEye)?.label : <span className="text-slate-350">未選</span>}</div>
+                    <div>V: {logGcsVerbal !== "" ? GCS_VERBAL_OPTIONS.find(o => o.value === logGcsVerbal)?.label : <span className="text-slate-350">未選</span>}</div>
+                    <div>M: {logGcsMotor !== "" ? GCS_MOTOR_OPTIONS.find(o => o.value === logGcsMotor)?.label : <span className="text-slate-350">未選</span>}</div>
+                  </div>
+
+                  {logGcsEye !== "" && logGcsVerbal !== "" && logGcsMotor !== "" && (
+                    (() => {
+                      const computedTotal = Number(logGcsEye) + Number(logGcsVerbal) + Number(logGcsMotor);
+                      const sev = getGcsSeverity(computedTotal);
+                      return (
+                        <div className={`p-2.5 rounded-lg border text-xs font-semibold flex items-center justify-between shadow-sm ${sev?.color || "bg-slate-100"}`}>
+                          <div>GCS 總分：<span className="font-mono text-sm font-extrabold">{computedTotal}</span> / 15 分</div>
+                          <div className="text-[10px] px-2 py-0.5 rounded font-bold bg-white shadow-xs border border-slate-100">{sev?.name}</div>
+                        </div>
+                      );
+                    })()
+                  )}
                 </div>
               </div>
 
