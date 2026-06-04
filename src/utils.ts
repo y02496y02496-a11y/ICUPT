@@ -36,6 +36,38 @@ export function getDaysBetween(date1?: string, date2?: string): number | null {
 }
 
 /**
+ * Calculates date difference excluding Saturdays and Sundays.
+ * Inputs should be "YYYY-MM-DD" formatted.
+ */
+export function getWeekdayDaysBetween(date1?: string, date2?: string): number | null {
+  if (!date1 || !date2) return null;
+  const d1 = new Date(date1);
+  const d2 = new Date(date2);
+  if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return null;
+
+  // Set times to midnight to avoid timezone/time differences issues
+  d1.setHours(0, 0, 0, 0);
+  d2.setHours(0, 0, 0, 0);
+
+  if (d1.getTime() === d2.getTime()) return 0;
+  
+  const isReverse = d1 > d2;
+  const start = isReverse ? new Date(d2) : new Date(d1);
+  const end = isReverse ? new Date(d1) : new Date(d2);
+
+  let count = 0;
+  const current = new Date(start);
+  while (current < end) {
+    const day = current.getDay(); // 0 is Sunday, 6 is Saturday
+    if (day !== 0 && day !== 6) {
+      count++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return isReverse ? -count : count;
+}
+
+/**
  * Fetch the calendar month (e.g. "2026-05") from "YYYY-MM-DD"
  */
 export function getMonthFromDate(dateStr: string): string {
