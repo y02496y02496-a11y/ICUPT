@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Patient, PTLog, ICU_MOBILITY_LEVELS } from "../types";
-import { getDaysBetween, getMonthFromDate, getQuarterFromDate, getMobilityBarColor } from "../utils";
+import { getDaysBetween, getWeekdayDaysBetween, getMonthFromDate, getQuarterFromDate, getMobilityBarColor } from "../utils";
 import {
   ResponsiveContainer,
   BarChart,
@@ -179,13 +179,13 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
     let replyToInitiateCount = 0;
 
     filteredPatients.forEach((p) => {
-      const daysToReply = getDaysBetween(p.consultDate, p.replyDate);
+      const daysToReply = getWeekdayDaysBetween(p.consultDate, p.replyDate);
       if (daysToReply !== null && daysToReply >= 0) {
         consultToReplySum += daysToReply;
         consultToReplyCount++;
       }
 
-      const daysToInitiate = getDaysBetween(p.replyDate, p.firstPTDate);
+      const daysToInitiate = getWeekdayDaysBetween(p.replyDate, p.firstPTDate);
       if (daysToInitiate !== null && daysToInitiate >= 0) {
         replyToInitiateSum += daysToInitiate;
         replyToInitiateCount++;
@@ -274,9 +274,10 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
 
   // Calculates the overall average mobility level in the period
   const averageMobilityLevel = useMemo(() => {
-    if (filteredLogs.length === 0) return "0.0";
-    const sum = filteredLogs.reduce((acc, log) => acc + log.mobilityLevel, 0);
-    return (sum / filteredLogs.length).toFixed(1);
+    const intervenedLogs = filteredLogs.filter((log) => log.hasIntervention);
+    if (intervenedLogs.length === 0) return "0.0";
+    const sum = intervenedLogs.reduce((acc, log) => acc + log.mobilityLevel, 0);
+    return (sum / intervenedLogs.length).toFixed(1);
   }, [filteredLogs]);
 
   // 4. Reasons for No Intervention (未介入原因統計)
@@ -318,9 +319,10 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       .map((month) => {
         const { logs, patientIds } = monthsGroup[month];
         const totalLogs = logs.length;
-        const intervened = logs.filter((l) => l.hasIntervention).length;
+        const intervenedLogs = logs.filter((l) => l.hasIntervention);
+        const intervened = intervenedLogs.length;
         const execRate = totalLogs > 0 ? (intervened / totalLogs) * 100 : 0;
-        const avgMobility = totalLogs > 0 ? logs.reduce((acc, l) => acc + l.mobilityLevel, 0) / totalLogs : 0;
+        const avgMobility = intervened > 0 ? intervenedLogs.reduce((acc, l) => acc + l.mobilityLevel, 0) / intervened : 0;
 
         // Find most frequent no intervention reason
         const reasons: { [r: string]: number } = {};
@@ -364,9 +366,10 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
       .map((quarter) => {
         const { logs, patientIds } = quartersGroup[quarter];
         const totalLogs = logs.length;
-        const intervened = logs.filter((l) => l.hasIntervention).length;
+        const intervenedLogs = logs.filter((l) => l.hasIntervention);
+        const intervened = intervenedLogs.length;
         const execRate = totalLogs > 0 ? (intervened / totalLogs) * 100 : 0;
-        const avgMobility = totalLogs > 0 ? logs.reduce((acc, l) => acc + l.mobilityLevel, 0) / totalLogs : 0;
+        const avgMobility = intervened > 0 ? intervenedLogs.reduce((acc, l) => acc + l.mobilityLevel, 0) / intervened : 0;
 
         // Top no intervention reason
         const reasons: { [r: string]: number } = {};
@@ -441,6 +444,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
         "未介入原因",
         "目前體能活動等級(ICU Mobility Scale)",
         "體能活動等級名稱",
+        "最大吸氣壓(MIP, cmH₂O)",
         "備註",
       ];
       rows = filteredLogs.map((log) => {
@@ -464,6 +468,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
           (log.noInterventionReason || "無").replace(/,/g, "，"),
           String(log.mobilityLevel),
           ICU_MOBILITY_LEVELS[log.mobilityLevel]?.name || "",
+          log.maxInspiratoryPressure != null ? String(log.maxInspiratoryPressure) : "",
           (log.notes || "無").replace(/,/g, "，").replace(/\n/g, " "),
         ];
       });
