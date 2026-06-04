@@ -500,7 +500,10 @@ export default function App() {
                             // Calculate current level
                             let latestLog: PTLog | null = null;
                             if (patLogsCount > 0) {
-                              latestLog = [...patLogs].sort((a, b) => b.date.localeCompare(a.date))[0];
+                              const intervenedLogs = [...patLogs].filter(l => l.hasIntervention);
+                              if (intervenedLogs.length > 0) {
+                                latestLog = intervenedLogs.sort((a, b) => b.date.localeCompare(a.date))[0];
+                              }
                             }
                             
                             const levelInfo = latestLog ? ICU_MOBILITY_LEVELS[latestLog.mobilityLevel] : null;
@@ -572,8 +575,10 @@ export default function App() {
                                       </span>
                                       <span className="font-semibold text-slate-700 leading-none">{levelInfo?.name}</span>
                                     </div>
+                                  ) : patLogsCount > 0 ? (
+                                    <div className="text-center text-slate-400 text-[11px] font-medium">未介入不需評估</div>
                                   ) : (
-                                    <div className="text-center text-slate-350">未開案</div>
+                                    <div className="text-center text-slate-350 text-[11px]">未開案</div>
                                   )}
                                 </td>
                                 <td className="py-3 px-4 text-center font-mono font-bold text-slate-500 whitespace-nowrap">
