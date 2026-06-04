@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { Patient, PTLog, ICU_MOBILITY_LEVELS } from "../types";
-import { getDaysBetween, getWeekdayDaysBetween, getMonthFromDate, getQuarterFromDate, getMobilityBarColor } from "../utils";
+import { getDaysBetween, getWeekdayDaysBetween, getMonthFromDate, getQuarterFromDate, getMobilityBarColor, getGcsSeverity } from "../utils";
 import {
   ResponsiveContainer,
   BarChart,
@@ -34,9 +34,10 @@ import {
 interface StatisticsDashboardProps {
   patients: Patient[];
   allLogs: { [patientId: string]: PTLog[] };
+  isAdmin?: boolean;
 }
 
-export default function StatisticsDashboard({ patients, allLogs }: StatisticsDashboardProps) {
+export default function StatisticsDashboard({ patients, allLogs, isAdmin = false }: StatisticsDashboardProps) {
   // Advanced Date Filter States
   const [filterType, setFilterType] = useState<"all" | "year" | "month" | "custom">("all");
   const [selectedYear, setSelectedYear] = useState<string>("2026");
@@ -444,6 +445,12 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
         "未介入原因",
         "目前體能活動等級(ICU Mobility Scale)",
         "體能活動等級名稱",
+        "RASS躁動鎮靜強度分數",
+        "GCS睜眼反應(E)",
+        "GCS語言反應(V)",
+        "GCS運動反應(M)",
+        "GCS總評分",
+        "GCS嚴重分級",
         "最大吸氣壓(MIP, cmH₂O)",
         "備註",
       ];
@@ -454,7 +461,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
         return [
           log.date,
           log.bedValue || patient?.bedValue || "",
-          patient?.chartNo || "",
+          patient ? (isAdmin ? patient.chartNo : "******") : "",
           patient?.name || "",
           (patient?.diagnosis || "").replace(/,/g, "，"),
           patient ? (patient.icuAdmissionDate || (patient as any).admissionDate || "") : "",
@@ -468,6 +475,12 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
           (log.noInterventionReason || "無").replace(/,/g, "，"),
           String(log.mobilityLevel),
           ICU_MOBILITY_LEVELS[log.mobilityLevel]?.name || "",
+          log.rassScore != null ? String(log.rassScore) : "",
+          log.gcsEye != null ? String(log.gcsEye) : "",
+          log.gcsVerbal != null ? String(log.gcsVerbal) : "",
+          log.gcsMotor != null ? String(log.gcsMotor) : "",
+          log.gcsTotal != null ? String(log.gcsTotal) : "",
+          log.gcsTotal != null ? (getGcsSeverity(log.gcsTotal)?.name || "") : "",
           log.maxInspiratoryPressure != null ? String(log.maxInspiratoryPressure) : "",
           (log.notes || "無").replace(/,/g, "，").replace(/\n/g, " "),
         ];
@@ -644,7 +657,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
                 <option value="all">📊 顯示全體個案合併統計</option>
                 {filteredPatientDropdownList.map((p) => (
                   <option key={p.id} value={p.id}>
-                    【{p.bedValue}床】{p.name} ({p.chartNo})
+                    【{p.bedValue}床】{p.name} ({isAdmin ? p.chartNo : "******"})
                   </option>
                 ))}
               </select>
@@ -1210,7 +1223,7 @@ export default function StatisticsDashboard({ patients, allLogs }: StatisticsDas
                     <tr key={pat.id} className="border-b border-slate-300">
                       <td className="py-1 px-1.5 border-r border-slate-300 text-center font-semibold font-mono">{pat.bedValue}</td>
                       <td className="py-1 px-1.5 border-r border-slate-300 font-bold">{pat.name}</td>
-                      <td className="py-1 px-1.5 border-r border-slate-300 font-mono">{pat.chartNo}</td>
+                      <td className="py-1 px-1.5 border-r border-slate-300 font-mono">{isAdmin ? pat.chartNo : "******"}</td>
                       <td className="py-1 px-1.5 border-r border-slate-300 text-slate-700 max-w-[125px] truncate" title={pat.diagnosis}>{pat.diagnosis}</td>
                       <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.icuAdmissionDate || (pat as any).admissionDate || "-"}</td>
                       <td className="py-1 px-1.5 border-r border-slate-300 text-center font-mono">{pat.consultDate || "-"}</td>
