@@ -25,6 +25,7 @@ export interface PTLog {
   hasIntervention: boolean; // 當天是否有介入
   noInterventionReason: string; // 未介入原因 (if false)
   mobilityLevel: number; // 目前體能活動量等級 (0-10)
+  maxInspiratoryPressure?: number | null; // 最大吸氣壓 (cmH₂O, or null if not applicable/measured)
   notes: string; // 備註
   createdAt: number;
   updatedAt: number;
