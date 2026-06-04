@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Patient, PTLog, ICU_MOBILITY_LEVELS, COMMON_NO_INTERVENTION_REASONS } from "../types";
-import { getDaysBetween } from "../utils";
+import { getDaysBetween, getWeekdayDaysBetween } from "../utils";
 import { doc, setDoc, deleteDoc, collection } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import {
@@ -57,6 +57,7 @@ export default function PatientDetailView({
   const [logCustomReason, setLogCustomReason] = useState("");
   const [logMobilityLevel, setLogMobilityLevel] = useState<number>(0);
   const [logNotes, setLogNotes] = useState("");
+  const [logMaxInspiratoryPressure, setLogMaxInspiratoryPressure] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState("");
 
@@ -85,8 +86,8 @@ export default function PatientDetailView({
     // Milestone days
     const icuAdmissionDate = patient.icuAdmissionDate || (patient as any).admissionDate || "";
     const admissionToConsultDays = getDaysBetween(icuAdmissionDate, patient.consultDate);
-    const recruitToReplyDays = getDaysBetween(patient.consultDate, patient.replyDate);
-    const replyToFirstPTDays = getDaysBetween(patient.replyDate, patient.firstPTDate);
+    const recruitToReplyDays = getWeekdayDaysBetween(patient.consultDate, patient.replyDate);
+    const replyToFirstPTDays = getWeekdayDaysBetween(patient.replyDate, patient.firstPTDate);
     const icuStayDays = getDaysBetween(patient.consultDate, patient.icuDischargeDate);
     const firstPTToDischargeDays = getDaysBetween(patient.firstPTDate, patient.icuDischargeDate);
     const totalHospitalDays = getDaysBetween(icuAdmissionDate, patient.icuDischargeDate);
@@ -117,6 +118,7 @@ export default function PatientDetailView({
     setLogCustomReason("");
     setLogMobilityLevel(patientStats.currentLevel !== null ? patientStats.currentLevel : 0);
     setLogNotes("");
+    setLogMaxInspiratoryPressure("");
     setFormError("");
     setShowLogForm(true);
   }
@@ -139,6 +141,7 @@ export default function PatientDetailView({
 
     setLogMobilityLevel(log.mobilityLevel);
     setLogNotes(log.notes);
+    setLogMaxInspiratoryPressure(log.maxInspiratoryPressure != null ? String(log.maxInspiratoryPressure) : "");
     setFormError("");
     setShowLogForm(true);
   }
@@ -159,6 +162,15 @@ export default function PatientDetailView({
       ? logCustomReason || "其他未介入原因"
       : logNoInterventionReason;
 
+    const parsedMIP = logMaxInspiratoryPressure.trim();
+    let mipValue: number | null = null;
+    if (parsedMIP !== "") {
+      const num = Number(parsedMIP);
+      if (!isNaN(num)) {
+        mipValue = num;
+      }
+    }
+
     try {
       setSubmitting(true);
       const logId = editingLog ? editingLog.id : `log_${Date.now()}`;
@@ -169,7 +181,8 @@ export default function PatientDetailView({
         bedValue: logBedValue || patient.bedValue,
         hasIntervention: logHasIntervention,
         noInterventionReason: finalReason,
-        mobilityLevel: Number(logMobilityLevel),
+        mobilityLevel: logHasIntervention ? Number(logMobilityLevel) : 0,
+        maxInspiratoryPressure: mipValue,
         notes: logNotes,
         createdAt: editingLog ? editingLog.createdAt : Date.now(),
         updatedAt: Date.now(),
@@ -419,6 +432,7 @@ export default function PatientDetailView({
                 <th className="py-3 px-4">當日介入</th>
                 <th className="py-3 px-4">未介入原因</th>
                 <th className="py-3 px-4">目前體能等級狀況 (ICU Mobility Scale)</th>
+                <th className="py-3 px-4 text-center">最大吸氣壓 (MIP)</th>
                 <th className="py-3 px-4">日誌/備註</th>
                 {isAdmin && <th className="py-3 px-4 text-center">操作權限</th>}
               </tr>
@@ -426,7 +440,7 @@ export default function PatientDetailView({
             <tbody className="divide-y divide-slate-100 text-xs">
               {reverseLogs.length === 0 ? (
                 <tr>
-                  <td colSpan={isAdmin ? 7 : 6} className="py-12 text-center text-slate-400 font-medium">
+                  <td colSpan={isAdmin ? 8 : 7} className="py-12 text-center text-slate-400 font-medium">
                     尚無這名病患的每日床邊記錄，請點選右上角「新增每日床邊評估記錄」起案。
                   </td>
                 </tr>
@@ -458,13 +472,26 @@ export default function PatientDetailView({
                         {log.hasIntervention ? <span className="text-slate-300">-</span> : log.noInterventionReason}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="w-5 h-5 flex items-center justify-center text-[10px] font-mono font-bold text-white bg-teal-500 rounded-full shrink-0">
-                            {log.mobilityLevel}
+                        {log.hasIntervention ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-5 h-5 flex items-center justify-center text-[10px] font-mono font-bold text-white bg-teal-500 rounded-full shrink-0">
+                              {log.mobilityLevel}
+                            </span>
+                            <span className="text-slate-700 font-medium">{levelInfo?.name}</span>
+                            <span className="text-[10px] text-slate-400 hidden sm:inline">({levelInfo?.definition})</span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-350 font-semibold text-xs">-</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center font-bold text-slate-700 whitespace-nowrap font-mono">
+                        {log.maxInspiratoryPressure != null ? (
+                          <span className="text-indigo-600">
+                            {log.maxInspiratoryPressure} <span className="text-[9px] font-normal text-slate-400 font-sans">cmH₂O</span>
                           </span>
-                          <span className="text-slate-700 font-medium">{levelInfo?.name}</span>
-                          <span className="text-[10px] text-slate-400 hidden sm:inline">({levelInfo?.definition})</span>
-                        </div>
+                        ) : (
+                          <span className="text-slate-300 font-normal">-</span>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-slate-500 max-w-[200px] break-all">
                         {log.notes || <span className="text-slate-300">無備註</span>}
@@ -617,21 +644,52 @@ export default function PatientDetailView({
                 </div>
               )}
 
-              {/* ICU Mobility scale levels select */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1" htmlFor="mobility-level-select">目前體能活動量等級 (ICU Mobility Scale 0-10)</label>
-                <select
-                  id="mobility-level-select"
-                  value={logMobilityLevel}
-                  onChange={(e) => setLogMobilityLevel(Number(e.target.value))}
-                  className="block w-full text-xs p-2.5 border border-slate-300 rounded-lg bg-slate-50 font-medium outline-none text-slate-800"
-                >
-                  {Object.entries(ICU_MOBILITY_LEVELS).map(([level, info]) => (
-                    <option key={level} value={level}>
-                      等級 {level}：{info.name} - ({info.definition})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* ICU Mobility scale levels select */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1" htmlFor="mobility-level-select">目前體能活動量等級 (ICU Mobility Scale 0-10)</label>
+                  {logHasIntervention ? (
+                    <select
+                      id="mobility-level-select"
+                      value={logMobilityLevel}
+                      onChange={(e) => setLogMobilityLevel(Number(e.target.value))}
+                      className="block w-full text-xs p-2.5 border border-slate-300 rounded-lg bg-slate-50 font-medium outline-none text-slate-800"
+                    >
+                      {Object.entries(ICU_MOBILITY_LEVELS).map(([level, info]) => (
+                        <option key={level} value={level}>
+                          等級 {level}：{info.name} - ({info.definition})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="p-2.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-500 font-semibold flex items-center h-[38px]">
+                      <span>⚠️ 未執行物理治療介入，此項不需評量等級</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Diaphragm Muscle Strength MIP */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1" htmlFor="mip-input">
+                    橫膈膜肌力評估 - 最大吸氣壓 (cmH₂O)
+                  </label>
+                  <div className="relative">
+                    <input
+                      id="mip-input"
+                      type="number"
+                      step="any"
+                      value={logMaxInspiratoryPressure}
+                      onChange={(e) => setLogMaxInspiratoryPressure(e.target.value)}
+                      placeholder="無或未量測則留空"
+                      className="block w-full text-xs p-2.5 border border-slate-300 rounded-lg bg-slate-50 outline-none focus:ring-1 focus:ring-teal-500 text-slate-800 font-mono pr-16"
+                    />
+                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none">
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded font-sans">
+                        cmH₂O
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Notes check */}
