@@ -193,9 +193,13 @@ export default function PatientDetailView({
       gcsEValue = Number(logGcsEye);
     }
 
-    let gcsVValue: number | null = null;
+    let gcsVValue: number | string | null = null;
     if (logGcsVerbal !== "") {
-      gcsVValue = Number(logGcsVerbal);
+      if (logGcsVerbal === "a" || logGcsVerbal === "e" || logGcsVerbal === "t") {
+        gcsVValue = logGcsVerbal;
+      } else {
+        gcsVValue = Number(logGcsVerbal);
+      }
     }
 
     let gcsMValue: number | null = null;
@@ -203,9 +207,19 @@ export default function PatientDetailView({
       gcsMValue = Number(logGcsMotor);
     }
 
-    let gcsTotalValue: number | null = null;
+    let gcsTotalValue: number | string | null = null;
     if (gcsEValue !== null && gcsVValue !== null && gcsMValue !== null) {
-      gcsTotalValue = gcsEValue + gcsVValue + gcsMValue;
+      if (typeof gcsVValue === "string") {
+        let reason = "";
+        if (gcsVValue === "a") reason = "失語症";
+        else if (gcsVValue === "e") reason = "插管中";
+        else if (gcsVValue === "t") reason = "氣切";
+        
+        const otherSum = gcsEValue + gcsMValue;
+        gcsTotalValue = `${otherSum}分 (${reason})`;
+      } else {
+        gcsTotalValue = gcsEValue + gcsVValue + gcsMValue;
+      }
     }
 
     try {
@@ -305,7 +319,14 @@ export default function PatientDetailView({
         </div>
 
         {/* Process Milestone Milestones Dates */}
-        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 md:grid-cols-5 gap-3.5 text-xs">
+        <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
+            <span className="text-slate-400 font-bold tracking-wide">入急診日期</span>
+            <div className="text-slate-700 font-bold flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-orange-500" />
+              {patient.erAdmissionDate || "未設定"}
+            </div>
+          </div>
           <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
             <span className="text-slate-400 font-bold tracking-wide">入ICU日期</span>
             <div className="text-slate-700 font-bold flex items-center gap-1.5">
@@ -354,7 +375,7 @@ export default function PatientDetailView({
               </span>
             )}
           </div>
-          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1 col-span-2 md:col-span-1">
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1 col-span-2 sm:col-span-1">
             <span className="text-slate-400 font-bold tracking-wide">轉出加護病房</span>
             <div className="text-slate-700 font-bold flex items-center gap-1.5">
               <Calendar className="w-3.5 h-3.5 text-rose-500" />
@@ -531,11 +552,12 @@ export default function PatientDetailView({
                       <td className="py-3 px-4 text-center font-semibold">
                         {log.gcsTotal != null ? (
                           (() => {
+                            const isStr = typeof log.gcsTotal === "string" || isNaN(Number(log.gcsTotal));
                             const sev = getGcsSeverity(log.gcsTotal);
                             return (
                               <div className="flex flex-col items-center gap-0.5 justify-center">
                                 <span className="font-mono text-[11px] font-bold text-slate-700 whitespace-nowrap">
-                                  E{log.gcsEye}V{log.gcsVerbal}M{log.gcsMotor} = {log.gcsTotal}分
+                                  E{log.gcsEye}V{log.gcsVerbal}M{log.gcsMotor} {isStr ? `= ${log.gcsTotal}` : `= ${log.gcsTotal}分`}
                                 </span>
                                 <span className={`text-[8.5px] font-bold px-1.5 py-px border rounded whitespace-nowrap scale-95 opacity-90 ${sev?.color || "bg-slate-100"}`}>
                                   {sev?.name}
@@ -835,12 +857,23 @@ export default function PatientDetailView({
                       <select
                         id="gcs-verbal-select"
                         value={logGcsVerbal}
-                        onChange={(e) => setLogGcsVerbal(e.target.value === "" ? "" : Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === "") {
+                            setLogGcsVerbal("");
+                          } else if (val === "a" || val === "e" || val === "t") {
+                            setLogGcsVerbal(val);
+                          } else {
+                            setLogGcsVerbal(Number(val));
+                          }
+                        }}
                         className="block w-full text-[11px] p-2 border border-slate-300 rounded-lg bg-white outline-none text-slate-800 font-mono focus:ring-1 focus:ring-teal-500"
                       >
                         <option value="">未評</option>
                         {GCS_VERBAL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>{opt.value} 分</option>
+                          <option key={opt.value} value={opt.value}>
+                            {opt.value === "a" || opt.value === "e" || opt.value === "t" ? opt.value : `${opt.value} 分`}
+                          </option>
                         ))}
                       </select>
                     </div>
@@ -861,7 +894,7 @@ export default function PatientDetailView({
                   </div>
 
                   {/* E V M descriptions details */}
-                  <div className="text-[10px] text-slate-500 font-normal space-y-1 bg-white p-2 rounded border border-slate-200">
+                  <div className="text-[10px] text-slate-500 font-normal space-y-1 bg-white p-2 rounded border border-slate-200 animate-fadeIn">
                     <div>E: {logGcsEye !== "" ? GCS_EYE_OPTIONS.find(o => o.value === logGcsEye)?.label : <span className="text-slate-350">未選</span>}</div>
                     <div>V: {logGcsVerbal !== "" ? GCS_VERBAL_OPTIONS.find(o => o.value === logGcsVerbal)?.label : <span className="text-slate-350">未選</span>}</div>
                     <div>M: {logGcsMotor !== "" ? GCS_MOTOR_OPTIONS.find(o => o.value === logGcsMotor)?.label : <span className="text-slate-350">未選</span>}</div>
@@ -869,6 +902,29 @@ export default function PatientDetailView({
 
                   {logGcsEye !== "" && logGcsVerbal !== "" && logGcsMotor !== "" && (
                     (() => {
+                      const isUnscoreable = logGcsVerbal === "a" || logGcsVerbal === "e" || logGcsVerbal === "t";
+                      if (isUnscoreable) {
+                        let reason = "";
+                        if (logGcsVerbal === "a") reason = "失語症";
+                        else if (logGcsVerbal === "e") reason = "插管中";
+                        else if (logGcsVerbal === "t") reason = "氣切";
+                        const sumOther = Number(logGcsEye) + Number(logGcsMotor);
+                        const sev = getGcsSeverity(sumOther);
+                        return (
+                          <div className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col gap-1.5 shadow-sm bg-gradient-to-r from-slate-50 to-white ${sev?.color || "bg-slate-100"}`}>
+                            <div className="flex items-center justify-between">
+                              <div>GCS 總分（不含V）：<span className="font-mono text-sm font-extrabold text-teal-700">{sumOther}</span> 分</div>
+                              <div className="text-[10px] px-2 py-0.5 rounded font-extrabold bg-white shadow-xs border border-slate-200">
+                                {sev?.name}
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              語言項目為 <span className="font-bold text-slate-700">{logGcsVerbal}</span> ({reason}) 不計分。睜眼與運動累計為 {sumOther} 分，進行意識嚴重度等級評估。
+                            </div>
+                          </div>
+                        );
+                      }
+
                       const computedTotal = Number(logGcsEye) + Number(logGcsVerbal) + Number(logGcsMotor);
                       const sev = getGcsSeverity(computedTotal);
                       return (
