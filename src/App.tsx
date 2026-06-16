@@ -134,18 +134,92 @@ export default function App() {
     return patients.find((p) => p.id === selectedPatientId) || null;
   }, [patients, selectedPatientId]);
 
-  // Filters patients list by name, bed, or chart number search query
-  const filteredPatientsList = useMemo(() => {
-    if (!searchQuery.trim()) return patients;
-    const query = searchQuery.toLowerCase().trim();
-    return patients.filter(
-      (p) =>
-        p.name.toLowerCase().includes(query) ||
-        p.bedValue.toLowerCase().includes(query) ||
-        p.chartNo.toLowerCase().includes(query) ||
-        p.diagnosis.toLowerCase().includes(query)
-    );
-  }, [patients, searchQuery]);
+  // Sorting States
+  const [sortBy, setSortBy] = useState<"bedValue" | "name" | "chartNo" | "diagnosis" | "icuAdmissionDate" | "latestMobilityLevel" | "patientLogsCount">("bedValue");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+
+  const handleSort = (field: typeof sortBy) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+  };
+
+  const getSortIndicator = (field: typeof sortBy) => {
+    if (sortBy !== field) return " ↕";
+    return sortOrder === "asc" ? " ⬆" : " ⬇";
+  };
+
+  // Filters and sorts patients list
+  const sortedAndFilteredPatientsList = useMemo(() => {
+    let list = [...patients];
+    
+    // 1. Filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      list = list.filter(
+        (p) =>
+          p.name.toLowerCase().includes(query) ||
+          p.bedValue.toLowerCase().includes(query) ||
+          p.chartNo.toLowerCase().includes(query) ||
+          p.diagnosis.toLowerCase().includes(query)
+      );
+    }
+    
+    // 2. Sort
+    list.sort((a, b) => {
+      let valA: any = "";
+      let valB: any = "";
+      
+      if (sortBy === "bedValue") {
+        valA = a.bedValue;
+        valB = b.bedValue;
+      } else if (sortBy === "name") {
+        valA = a.name;
+        valB = b.name;
+      } else if (sortBy === "chartNo") {
+        valA = a.chartNo;
+        valB = b.chartNo;
+      } else if (sortBy === "diagnosis") {
+        valA = a.diagnosis;
+        valB = b.diagnosis;
+      } else if (sortBy === "icuAdmissionDate") {
+        valA = a.icuAdmissionDate || (a as any).admissionDate || "";
+        valB = b.icuAdmissionDate || (b as any).admissionDate || "";
+      } else if (sortBy === "latestMobilityLevel") {
+        const logsA = allLogs[a.id] || [];
+        const activeA = logsA.filter(l => l.hasIntervention);
+        const levelA = activeA.length > 0 
+          ? [...activeA].sort((x, y) => y.date.localeCompare(x.date))[0]?.mobilityLevel 
+          : -1;
+        
+        const logsB = allLogs[b.id] || [];
+        const activeB = logsB.filter(l => l.hasIntervention);
+        const levelB = activeB.length > 0 
+          ? [...activeB].sort((x, y) => y.date.localeCompare(x.date))[0]?.mobilityLevel 
+          : -1;
+          
+        valA = levelA;
+        valB = levelB;
+      } else if (sortBy === "patientLogsCount") {
+        valA = (allLogs[a.id] || []).length;
+        valB = (allLogs[b.id] || []).length;
+      }
+      
+      let result = 0;
+      if (typeof valA === "number" && typeof valB === "number") {
+        result = valA - valB;
+      } else {
+        result = String(valA).localeCompare(String(valB), "zh-Hant", { numeric: true });
+      }
+      
+      return sortOrder === "asc" ? result : -result;
+    });
+    
+    return list;
+  }, [patients, searchQuery, sortBy, sortOrder, allLogs]);
 
   /**
    * Delete Patient Profile with logs cleanup
@@ -467,15 +541,43 @@ export default function App() {
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
-                        <tr className="border-b border-slate-250 text-slate-400 text-[11px] font-bold uppercase bg-slate-50/50">
-                          <th className="py-3 px-4 text-center">床號</th>
-                          <th className="py-3 px-4">姓名</th>
-                          <th className="py-3 px-4">病歷號碼</th>
-                          <th className="py-3 px-4">診斷說明</th>
-                          <th className="py-3 px-4">照會里程日期 (照會/回覆/開案)</th>
-                          <th className="py-3 px-4 text-center">最新體能級數</th>
-                          <th className="py-3 px-4 text-center">歷史記錄人次</th>
-                          <th className="py-3 px-4 text-center">管理動作</th>
+                        <tr className="border-b border-slate-250 text-slate-500 text-[11px] font-bold uppercase bg-slate-50/50 select-none">
+                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("bedValue")}>
+                            <div className="flex items-center justify-center gap-1">
+                              床號 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("bedValue")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("name")}>
+                            <div className="flex items-center gap-1">
+                              姓名 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("name")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("chartNo")}>
+                            <div className="flex items-center gap-1">
+                              病歷號碼 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("chartNo")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("diagnosis")}>
+                            <div className="flex items-center gap-1">
+                              診斷說明 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("diagnosis")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("icuAdmissionDate")}>
+                            <div className="flex items-center gap-1">
+                              照會里程日期 (照會/回覆/開案) <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("icuAdmissionDate")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("latestMobilityLevel")}>
+                            <div className="flex items-center justify-center gap-1">
+                              最新體能級數 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("latestMobilityLevel")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("patientLogsCount")}>
+                            <div className="flex items-center justify-center gap-1">
+                              歷史記錄人次 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("patientLogsCount")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 text-center text-slate-400">管理動作</th>
                         </tr>
                       </thead>
                       
@@ -486,14 +588,14 @@ export default function App() {
                               正在加載神經外科病患追蹤名單中...
                             </td>
                           </tr>
-                        ) : filteredPatientsList.length === 0 ? (
+                        ) : sortedAndFilteredPatientsList.length === 0 ? (
                           <tr>
                             <td colSpan={8} className="py-12 text-center text-slate-400 font-medium">
                               {searchQuery ? "找不到符合關鍵字的個案，請換個詞再試。" : "目前加護病房無追蹤名單，請登入管理者新增收案個案。"}
                             </td>
                           </tr>
                         ) : (
-                          filteredPatientsList.map((pat) => {
+                          sortedAndFilteredPatientsList.map((pat) => {
                             const patLogs = allLogs[pat.id] || [];
                             const patLogsCount = patLogs.length;
                             
