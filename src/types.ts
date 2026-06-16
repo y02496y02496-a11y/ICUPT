@@ -13,6 +13,7 @@ export interface Patient {
   firstPTDate: string; // 第一次執行日期 (YYYY-MM-DD or empty)
   icuDischargeDate: string; // 轉出加護病房日期 (YYYY-MM-DD or empty)
   icuAdmissionDate: string; // 入ICU日期 (YYYY-MM-DD or empty)
+  erAdmissionDate?: string; // 入急診日期 (YYYY-MM-DD or empty)
   notes: string; // 備註
   createdAt: number; // millisecond timestamp
   updatedAt: number; // millisecond timestamp
@@ -28,9 +29,9 @@ export interface PTLog {
   maxInspiratoryPressure?: number | null; // 最大吸氣壓 (cmH₂O, or null if not applicable/measured)
   rassScore?: number | null; // RASS 評估分數 (+4 to -5)
   gcsEye?: number | null; // GCS 睜眼反應 (1-4)
-  gcsVerbal?: number | null; // GCS 語言反應 (1-5)
+  gcsVerbal?: number | string | null; // GCS 語言反應 (1-5, or "a", "e", "t")
   gcsMotor?: number | null; // GCS 運動反應 (1-6)
-  gcsTotal?: number | null; // GCS 總分 (3-15)
+  gcsTotal?: number | string | null; // GCS 總分 (3-15 or "無法評分")
   notes: string; // 備註
   createdAt: number;
   updatedAt: number;
@@ -100,6 +101,9 @@ export const GCS_VERBAL_OPTIONS = [
   { value: 3, label: "V3 - 答非所問/不適當字詞 (Inappropriate words)" },
   { value: 2, label: "V2 - 無意義聲音/無法理解 (Incomprehensible sounds)" },
   { value: 1, label: "V1 - 無反應 (No response)" },
+  { value: "a", label: "a - 失語症 (Aphasia)" },
+  { value: "e", label: "e - 插管中 (Intubated)" },
+  { value: "t", label: "t - 氣切 (Tracheostomy)" },
 ];
 
 export const GCS_MOTOR_OPTIONS = [
