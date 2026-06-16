@@ -106,11 +106,22 @@ export function getMobilityBarColor(level: number): string {
  * Moderate: 9-12
  * Severe: 3-8
  */
-export function getGcsSeverity(score: number | null | undefined): { name: string; color: string } | null {
-  if (score == null || isNaN(score) || score < 3 || score > 15) return null;
-  if (score >= 13) {
+export function getGcsSeverity(score: number | string | null | undefined): { name: string; color: string } | null {
+  if (score == null) return null;
+  const scoreStr = String(score).trim();
+  
+  // Try to find the first sequence of digits in the string
+  const match = scoreStr.match(/^(\d+)/) || scoreStr.match(/(\d+)/);
+  const numScore = match ? Number(match[1]) : Number(score);
+  
+  if (isNaN(numScore)) {
+    return { name: "無法評分", color: "text-slate-500 bg-slate-50 border-slate-200" };
+  }
+  
+  if (numScore < 2 || numScore > 15) return null;
+  if (numScore >= 13) {
     return { name: "輕度 (Mild)", color: "text-emerald-700 bg-emerald-50 border-emerald-200" };
-  } else if (score >= 9) {
+  } else if (numScore >= 9) {
     return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
   } else {
     return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
