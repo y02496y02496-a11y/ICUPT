@@ -909,7 +909,7 @@ export default function PatientDetailView({
                         else if (logGcsVerbal === "e") reason = "插管中";
                         else if (logGcsVerbal === "t") reason = "氣切";
                         const sumOther = Number(logGcsEye) + Number(logGcsMotor);
-                        const sev = getGcsSeverity(sumOther);
+                        const sev = getGcsSeverity(sumOther, true);
                         return (
                           <div className={`p-2.5 rounded-lg border text-xs font-semibold flex flex-col gap-1.5 shadow-sm bg-gradient-to-r from-slate-50 to-white ${sev?.color || "bg-slate-100"}`}>
                             <div className="flex items-center justify-between">
