@@ -102,11 +102,20 @@ export function getMobilityBarColor(level: number): string {
 
 /**
  * Gets GCS classification severity name and tailwind text/bg color.
+ * Standard GCS (E + V + M = 3 to 15):
  * Mild: 13-15
  * Moderate: 9-12
  * Severe: 3-8
+ * 
+ * Unscoreable GCS (V is "a" | "e" | "t", sum of other components E + M = 2 to 10):
+ * Mild: 9-10
+ * Moderate: 6-8
+ * Severe: 2-5
  */
-export function getGcsSeverity(score: number | string | null | undefined): { name: string; color: string } | null {
+export function getGcsSeverity(
+  score: number | string | null | undefined,
+  isUnscoreableVParam?: boolean
+): { name: string; color: string } | null {
   if (score == null) return null;
   const scoreStr = String(score).trim();
   
@@ -118,13 +127,34 @@ export function getGcsSeverity(score: number | string | null | undefined): { nam
     return { name: "無法評分", color: "text-slate-500 bg-slate-50 border-slate-200" };
   }
   
-  if (numScore < 2 || numScore > 15) return null;
-  if (numScore >= 13) {
-    return { name: "輕度 (Mild)", color: "text-emerald-700 bg-emerald-50 border-emerald-200" };
-  } else if (numScore >= 9) {
-    return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
+  const isUnscoreableV = !!(
+    isUnscoreableVParam ||
+    (typeof score === "string" && (
+      scoreStr.includes("失語症") ||
+      scoreStr.includes("插管中") ||
+      scoreStr.includes("氣切") ||
+      /\([aet]\)/i.test(scoreStr)
+    ))
+  );
+
+  if (isUnscoreableV) {
+    if (numScore < 2 || numScore > 10) return null;
+    if (numScore >= 9) {
+      return { name: "輕度 (Mild)", color: "text-emerald-700 bg-emerald-50 border-emerald-200" };
+    } else if (numScore >= 6) {
+      return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
+    } else {
+      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
+    }
   } else {
-    return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
+    if (numScore < 3 || numScore > 15) return null;
+    if (numScore >= 13) {
+      return { name: "輕度 (Mild)", color: "text-emerald-700 bg-emerald-50 border-emerald-200" };
+    } else if (numScore >= 9) {
+      return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
+    } else {
+      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
+    }
   }
 }
 
