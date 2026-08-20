@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { Patient, PTLog, ICU_MOBILITY_LEVELS, COMMON_NO_INTERVENTION_REASONS, RASS_SCORES, GCS_EYE_OPTIONS, GCS_VERBAL_OPTIONS, GCS_MOTOR_OPTIONS } from "../types";
-import { getDaysBetween, getWeekdayDaysBetween, getGcsSeverity } from "../utils";
+import { getDaysBetween, getWeekdayDaysBetween, getGcsSeverity, computeGcsResult } from "../utils";
 import { doc, setDoc, deleteDoc, collection } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "../firebase";
 import {
@@ -320,23 +320,72 @@ export default function PatientDetailView({
 
         {/* Process Milestone Milestones Dates */}
         <div className="p-4 bg-slate-50 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3 text-xs">
-          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
-            <span className="text-slate-400 font-bold tracking-wide">入急診日期</span>
-            <div className="text-slate-700 font-bold flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-orange-500" />
-              {patient.erAdmissionDate || "未設定"}
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1.5 flex flex-col justify-between">
+            <div>
+              <span className="text-slate-400 font-bold tracking-wide text-[11px] block">入急診日期</span>
+              <div className="text-slate-700 font-bold flex items-center gap-1.5 mt-0.5">
+                <Calendar className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                <span>{patient.erAdmissionDate || "未設定"}</span>
+              </div>
             </div>
+            {patient.erGcsTotal != null && (
+              <div className="pt-1.5 border-t border-slate-100 flex flex-col gap-1">
+                <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold text-slate-700">
+                  <span className="text-slate-500">GCS:</span>
+                  <span>
+                    {patient.erGcsEye != null && patient.erGcsVerbal != null && patient.erGcsMotor != null
+                      ? `E${patient.erGcsEye}V${patient.erGcsVerbal}M${patient.erGcsMotor} = ${patient.erGcsTotal}`
+                      : `${patient.erGcsTotal}`}
+                  </span>
+                </div>
+                {(() => {
+                  const isUnsc = patient.erGcsVerbal === "a" || patient.erGcsVerbal === "e" || patient.erGcsVerbal === "t";
+                  const sev = getGcsSeverity(patient.erGcsTotal, isUnsc);
+                  if (!sev) return null;
+                  return (
+                    <span className={`text-[8.5px] font-extrabold px-1.5 py-0.5 border rounded w-fit ${sev.color}`}>
+                      {sev.name}
+                    </span>
+                  );
+                })()}
+              </div>
+            )}
           </div>
-          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
-            <span className="text-slate-400 font-bold tracking-wide">入ICU日期</span>
-            <div className="text-slate-700 font-bold flex items-center gap-1.5">
-              <Calendar className="w-3.5 h-3.5 text-blue-500" />
-              {patient.icuAdmissionDate || (patient as any).admissionDate || "未設定"}
+
+          <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1.5 flex flex-col justify-between">
+            <div>
+              <span className="text-slate-400 font-bold tracking-wide text-[11px] block">入ICU日期</span>
+              <div className="text-slate-700 font-bold flex items-center gap-1.5 mt-0.5">
+                <Calendar className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span>{patient.icuAdmissionDate || (patient as any).admissionDate || "未設定"}</span>
+              </div>
+              {patientStats.totalHospitalDays !== null && (
+                <span className="text-[10px] text-slate-400 block pt-0.5">
+                  ICU住院累計：<strong className="text-blue-600 font-bold">{patientStats.totalHospitalDays}</strong> 天
+                </span>
+              )}
             </div>
-            {patientStats.totalHospitalDays !== null && (
-              <span className="text-[10px] text-slate-400 block pt-0.5">
-                ICU住院累計：<strong className="text-blue-600 font-bold">{patientStats.totalHospitalDays}</strong> 天
-              </span>
+            {patient.icuGcsTotal != null && (
+              <div className="pt-1.5 border-t border-slate-100 flex flex-col gap-1">
+                <div className="flex items-center gap-1 font-mono text-[10.5px] font-bold text-slate-700">
+                  <span className="text-slate-500">GCS:</span>
+                  <span>
+                    {patient.icuGcsEye != null && patient.icuGcsVerbal != null && patient.icuGcsMotor != null
+                      ? `E${patient.icuGcsEye}V${patient.icuGcsVerbal}M${patient.icuGcsMotor} = ${patient.icuGcsTotal}`
+                      : `${patient.icuGcsTotal}`}
+                  </span>
+                </div>
+                {(() => {
+                  const isUnsc = patient.icuGcsVerbal === "a" || patient.icuGcsVerbal === "e" || patient.icuGcsVerbal === "t";
+                  const sev = getGcsSeverity(patient.icuGcsTotal, isUnsc);
+                  if (!sev) return null;
+                  return (
+                    <span className={`text-[8.5px] font-extrabold px-1.5 py-0.5 border rounded w-fit ${sev.color}`}>
+                      {sev.name}
+                    </span>
+                  );
+                })()}
+              </div>
             )}
           </div>
           <div className="p-3 bg-white border border-slate-200 rounded-lg space-y-1">
