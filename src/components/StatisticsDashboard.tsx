@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Patient, PTLog, ICU_MOBILITY_LEVELS } from "../types";
+import { Patient, PTLog, ICU_MOBILITY_LEVELS, COMMON_NO_INTERVENTION_REASONS } from "../types";
 import { getDaysBetween, getWeekdayDaysBetween, getMonthFromDate, getQuarterFromDate, getMobilityBarColor, getGcsSeverity } from "../utils";
 import {
   ResponsiveContainer,
@@ -28,7 +28,13 @@ import {
   Printer,
   FileText,
   Search,
-  SlidersHorizontal
+  SlidersHorizontal,
+  CheckSquare,
+  Square,
+  ShieldAlert,
+  Calculator,
+  CheckCircle2,
+  Filter
 } from "lucide-react";
 
 interface StatisticsDashboardProps {
@@ -49,6 +55,9 @@ export default function StatisticsDashboard({ patients, allLogs, isAdmin = false
   const [selectedPatientId, setSelectedPatientId] = useState<string>("all");
   const [selectedMobilityLevel, setSelectedMobilityLevel] = useState<string>("all");
   const [dashboardSearchQuery, setDashboardSearchQuery] = useState<string>("");
+
+  // Multi-select for No-Intervention Reasons to calculate Adjusted Execution Rate (未進行介入原因複選勾選)
+  const [selectedNoInterventionReasons, setSelectedNoInterventionReasons] = useState<string[]>([]);
 
   // Helper list to search and filter the drops for patient dropdown
   const filteredPatientDropdownList = useMemo(() => {
@@ -160,17 +169,99 @@ export default function StatisticsDashboard({ patients, allLogs, isAdmin = false
     return result;
   }, [patients, filteredLogs, filterType, selectedYear, selectedMonth, startDate, endDate, selectedPatientId, selectedMobilityLevel, processedLogs]);
 
-  // 1. Calculate Physical Therapy Execution Rate (復健介入執行率)
+  // Comprehensive list of all available no intervention reasons
+  const allAvailableReasons = useMemo(() => {
+    const reasonsSet = new Set<string>(COMMON_NO_INTERVENTION_REASONS);
+    processedLogs.forEach((log) => {
+      if (!log.hasIntervention && log.noInterventionReason && log.noInterventionReason.trim()) {
+        reasonsSet.add(log.noInterventionReason.trim());
+      }
+    });
+    return Array.from(reasonsSet);
+  }, [processedLogs]);
+
+  // Count of each no intervention reason in current filtered scope
+  const reasonCountsInPeriod = useMemo(() => {
+    const counts: Record<string, number> = {};
+    filteredLogs.forEach((log) => {
+      if (!log.hasIntervention) {
+        const r = log.noInterventionReason || "其他 (見備註)";
+        counts[r] = (counts[r] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [filteredLogs]);
+
+  // 1. Calculate Physical Therapy Execution Rate (復健介入執行率與排除非可控因素後之調整執行率)
   const executionStats = useMemo(() => {
     const totalCount = filteredLogs.length;
-    if (totalCount === 0) return { total: 0, intervened: 0, rate: 0 };
+    if (totalCount === 0) {
+      return {
+        total: 0,
+        intervened: 0,
+        unintervened: 0,
+        rawRate: 0,
+        rate: 0,
+        excludedCount: 0,
+        adjustedTotal: 0,
+        adjustedRate: 0,
+        selectedReasonsCount: selectedNoInterventionReasons.length,
+      };
+    }
     const intervenedCount = filteredLogs.filter((log) => log.hasIntervention).length;
+    const unintervenedCount = totalCount - intervenedCount;
+    const rawRate = Math.round((intervenedCount / totalCount) * 1000) / 10;
+
+    // Count how many un-intervened logs match the checked reasons for exclusion
+    const excludedCount = filteredLogs.filter(
+      (log) => !log.hasIntervention && selectedNoInterventionReasons.includes(log.noInterventionReason || "其他 (見備註)")
+    ).length;
+
+    // Adjusted denominator: total minus excluded un-intervened records
+    const adjustedTotal = Math.max(intervenedCount, totalCount - excludedCount);
+    const adjustedRate = adjustedTotal > 0 ? Math.round((intervenedCount / adjustedTotal) * 1000) / 10 : 0;
+
     return {
       total: totalCount,
       intervened: intervenedCount,
-      rate: Math.round((intervenedCount / totalCount) * 1000) / 10,
+      unintervened: unintervenedCount,
+      rawRate,
+      rate: selectedNoInterventionReasons.length > 0 ? adjustedRate : rawRate,
+      excludedCount,
+      adjustedTotal,
+      adjustedRate,
+      selectedReasonsCount: selectedNoInterventionReasons.length,
     };
-  }, [filteredLogs]);
+  }, [filteredLogs, selectedNoInterventionReasons]);
+
+  // Handlers for reason multi-selection
+  function handleToggleReason(reason: string) {
+    setSelectedNoInterventionReasons((prev) =>
+      prev.includes(reason) ? prev.filter((r) => r !== reason) : [...prev, reason]
+    );
+  }
+
+  function handleSelectAllReasons() {
+    setSelectedNoInterventionReasons([...allAvailableReasons]);
+  }
+
+  function handleClearAllReasons() {
+    setSelectedNoInterventionReasons([]);
+  }
+
+  function handleSelectMedicalContraindications() {
+    // Medical contraindications: vital signs, sedation, high extubation risk, surgeries/exams, severe infection/shock
+    const medicalReasons = [
+      "生命徵象不穩定 (GCS變差/血壓不穩/ICP升高)",
+      "鎮靜劑使用中 (RASS指數深沉/無反應)",
+      "呼吸器或管路撤移拔管風險高",
+      "進行重要檢查/手術或操作中",
+      "發燒/嚴重感染或急性休克",
+    ];
+    // Filter to only include those present in allAvailableReasons
+    const availableMedical = medicalReasons.filter((r) => allAvailableReasons.includes(r));
+    setSelectedNoInterventionReasons(availableMedical.length > 0 ? availableMedical : medicalReasons);
+  }
 
   // 2. Consultation, Reply, and Initiation Speeds (照會回覆與開案時效分析)
   const referralSpeeds = useMemo(() => {
@@ -434,7 +525,10 @@ export default function StatisticsDashboard({ patients, allLogs, isAdmin = false
         "病歷號碼",
         "姓名",
         "診斷說明",
+        "入急診日期",
+        "入急診GCS評估",
         "入ICU日期",
+        "入ICUGCS評估",
         "收案照會日期",
         "回覆照會日期",
         "第一次介入日期",
@@ -458,13 +552,27 @@ export default function StatisticsDashboard({ patients, allLogs, isAdmin = false
         const patient = patients.find((p) => p.id === log.patientId);
         const icuStay = patient ? getDaysBetween(patient.consultDate, patient.icuDischargeDate) : null;
         const hospStay = patient ? getDaysBetween(patient.icuAdmissionDate || (patient as any).admissionDate, patient.icuDischargeDate) : null;
+        
+        let erGcsStr = "";
+        if (patient && patient.erGcsTotal != null) {
+          erGcsStr = `E${patient.erGcsEye || ""}V${patient.erGcsVerbal || ""}M${patient.erGcsMotor || ""} = ${patient.erGcsTotal}`;
+        }
+
+        let icuGcsStr = "";
+        if (patient && patient.icuGcsTotal != null) {
+          icuGcsStr = `E${patient.icuGcsEye || ""}V${patient.icuGcsVerbal || ""}M${patient.icuGcsMotor || ""} = ${patient.icuGcsTotal}`;
+        }
+
         return [
           log.date,
           log.bedValue || patient?.bedValue || "",
           patient ? (isAdmin ? patient.chartNo : "******") : "",
           patient?.name || "",
           (patient?.diagnosis || "").replace(/,/g, "，"),
+          patient?.erAdmissionDate || "",
+          erGcsStr,
           patient ? (patient.icuAdmissionDate || (patient as any).admissionDate || "") : "",
+          icuGcsStr,
           patient?.consultDate || "",
           patient?.replyDate || "",
           patient?.firstPTDate || "",
@@ -707,24 +815,163 @@ export default function StatisticsDashboard({ patients, allLogs, isAdmin = false
             </div>
           </div>
         </div>
+
+        {/* Multi-Select No-Intervention Reasons Bento Panel */}
+        <div id="no-intervention-filter-panel" className="mt-4 pt-4 border-t border-slate-150">
+          <div className="bg-slate-50/80 border border-slate-200 rounded-xl p-4 space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-2.5 border-b border-slate-200">
+              <div className="flex items-center gap-2 flex-wrap">
+                <CheckSquare className="w-4 h-4 text-teal-600 shrink-0" />
+                <span className="text-xs font-bold text-slate-800">
+                  未進行介入原因複選與執行率分析 (Multi-Select No-Intervention Reasons)
+                </span>
+                {selectedNoInterventionReasons.length > 0 ? (
+                  <span className="px-2 py-0.5 text-[10.5px] font-bold rounded-md bg-teal-600 text-white shadow-xs animate-fadeIn">
+                    已勾選 {selectedNoInterventionReasons.length} 項 (扣除排除 {executionStats.excludedCount} 筆)
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 text-[10.5px] font-semibold rounded-md bg-slate-200 text-slate-600">
+                    目前尚未勾選排除原因（計算原始執行率）
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handleSelectMedicalContraindications}
+                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                  title="快速勾選常見非可控醫療因素（生命徵象不穩、檢查手術中、高拔管風險、急性休克/感染）"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5 text-amber-600" />
+                  一鍵勾選不可抗拒醫療因素
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectAllReasons}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                >
+                  全選
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearAllReasons}
+                  className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-[11px] font-semibold transition-all cursor-pointer"
+                >
+                  全部取消
+                </button>
+              </div>
+            </div>
+
+            {/* Checkbox Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 pt-1">
+              {allAvailableReasons.map((reason) => {
+                const isChecked = selectedNoInterventionReasons.includes(reason);
+                const count = reasonCountsInPeriod[reason] || 0;
+                const pct = executionStats.unintervenedCount > 0 ? Math.round((count / executionStats.unintervenedCount) * 100) : 0;
+                return (
+                  <label
+                    key={reason}
+                    className={`flex items-start gap-2.5 p-2.5 rounded-lg border text-xs cursor-pointer select-none transition-all ${
+                      isChecked
+                        ? "bg-teal-50/90 border-teal-400 text-teal-950 font-semibold shadow-xs ring-1 ring-teal-300/40"
+                        : "bg-white border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleReason(reason)}
+                      className="mt-0.5 rounded text-teal-600 focus:ring-teal-500 w-4 h-4 cursor-pointer accent-teal-600 shrink-0"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span className="text-[11.5px] leading-tight break-words">{reason}</span>
+                        {count > 0 && (
+                          <span className={`shrink-0 px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+                            isChecked ? "bg-teal-100 text-teal-800 border border-teal-200" : "bg-slate-100 text-slate-600 border border-slate-200"
+                          }`}>
+                            {count}次 ({pct}%)
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+
+            {/* Calculation Formula & Summary Bar */}
+            <div className="p-3 bg-white border border-teal-100 rounded-lg flex flex-col md:flex-row md:items-center justify-between gap-2.5 text-xs shadow-xs">
+              <div className="flex items-center gap-2">
+                <Calculator className="w-4 h-4 text-teal-600 shrink-0" />
+                <div className="text-slate-700 text-[11.5px] leading-relaxed">
+                  <span className="font-bold text-slate-900">復健介入執行率計算公式：</span>
+                  {selectedNoInterventionReasons.length > 0 ? (
+                    <span>
+                      實際介入 <strong className="font-mono text-teal-700 font-extrabold">{executionStats.intervened}</strong> 次 ÷ (總評估 <strong className="font-mono">{executionStats.total}</strong> - 勾選排除未介入 <strong className="font-mono text-amber-700 font-extrabold">{executionStats.excludedCount}</strong>) ={" "}
+                      <strong className="text-teal-700 font-extrabold text-sm underline decoration-teal-300 font-mono">{executionStats.adjustedRate}%</strong>
+                    </span>
+                  ) : (
+                    <span>
+                      實際介入 <strong className="font-mono text-teal-700 font-extrabold">{executionStats.intervened}</strong> 次 ÷ 總記錄 <strong className="font-mono">{executionStats.total}</strong> 次 ={" "}
+                      <strong className="text-teal-700 font-extrabold text-sm font-mono">{executionStats.rawRate}%</strong>
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {selectedNoInterventionReasons.length > 0 && (
+                <div className="flex items-center gap-2 text-[11px] shrink-0 bg-teal-50/70 border border-teal-100 px-2.5 py-1 rounded-md">
+                  <span className="text-slate-500">原始執行率：<strong className="font-mono text-slate-700">{executionStats.rawRate}%</strong></span>
+                  <span className="text-teal-400 font-bold">➔</span>
+                  <span className="text-teal-800">調整提升：<strong className="font-mono font-bold text-teal-700">+{Math.max(0, Math.round((executionStats.adjustedRate - executionStats.rawRate) * 10) / 10)}%</strong></span>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* KPI Metric Overview Grid */}
       <div id="kpi-grid" className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1: PT Intervention Execution Rate */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex items-center justify-between">
-          <div className="space-y-1">
-            <span className="text-xs text-slate-500 font-medium tracking-wide">復健介入執行率</span>
-            <div className="flex items-baseline gap-1">
-              <span className="text-3xl font-extrabold text-teal-600">{executionStats.rate}%</span>
+        <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-500 font-medium tracking-wide">
+              {selectedNoInterventionReasons.length > 0 ? "復健介入執行率 (已排除不可抗拒)" : "復健介入執行率"}
+            </span>
+            <div className="w-10 h-10 rounded-lg bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="my-2 space-y-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-extrabold text-teal-600 font-mono">
+                {selectedNoInterventionReasons.length > 0 ? executionStats.adjustedRate : executionStats.rawRate}%
+              </span>
+              {selectedNoInterventionReasons.length > 0 && (
+                <span className="text-xs text-slate-400 font-mono">
+                  (原始: {executionStats.rawRate}%)
+                </span>
+              )}
             </div>
             <p className="text-[11px] text-slate-400">
-              篩選期：已介入 {executionStats.intervened} / 總記錄 {executionStats.total}
+              {selectedNoInterventionReasons.length > 0
+                ? `介入 ${executionStats.intervened} / 有效分母 ${executionStats.adjustedTotal} (排除 ${executionStats.excludedCount} 筆)`
+                : `篩選期：已介入 ${executionStats.intervened} / 總記錄 ${executionStats.total}`}
             </p>
           </div>
-          <div className="w-12 h-12 rounded-lg bg-teal-50 flex items-center justify-center text-teal-600 shrink-0">
-            <TrendingUp className="w-6 h-6" />
-          </div>
+
+          {selectedNoInterventionReasons.length > 0 && (
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[10px]">
+              <span className="text-teal-700 font-bold flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-teal-600 inline" />
+                已扣除 {selectedNoInterventionReasons.length} 項非可控因素
+              </span>
+            </div>
+          )}
         </div>
 
         {/* KPI 2: Average ICU Mobility Level */}
