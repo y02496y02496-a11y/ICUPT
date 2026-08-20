@@ -14,6 +14,19 @@ export interface Patient {
   icuDischargeDate: string; // 轉出加護病房日期 (YYYY-MM-DD or empty)
   icuAdmissionDate: string; // 入ICU日期 (YYYY-MM-DD or empty)
   erAdmissionDate?: string; // 入急診日期 (YYYY-MM-DD or empty)
+  
+  // 入急診當天 GCS 意識評估
+  erGcsEye?: number | null; // 1-4
+  erGcsVerbal?: number | string | null; // 1-5, or "a", "e", "t"
+  erGcsMotor?: number | null; // 1-6
+  erGcsTotal?: number | string | null; // e.g. 15, or "10分 (插管中)"
+
+  // 入ICU當天 GCS 意識評估
+  icuGcsEye?: number | null; // 1-4
+  icuGcsVerbal?: number | string | null; // 1-5, or "a", "e", "t"
+  icuGcsMotor?: number | null; // 1-6
+  icuGcsTotal?: number | string | null; // e.g. 15, or "10分 (插管中)"
+
   notes: string; // 備註
   createdAt: number; // millisecond timestamp
   updatedAt: number; // millisecond timestamp
