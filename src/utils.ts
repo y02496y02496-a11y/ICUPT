@@ -116,7 +116,7 @@ export function getGcsSeverity(
   score: number | string | null | undefined,
   isUnscoreableVParam?: boolean
 ): { name: string; color: string } | null {
-  if (score == null) return null;
+  if (score == null || score === "") return null;
   const scoreStr = String(score).trim();
   
   // Try to find the first sequence of digits in the string
@@ -144,7 +144,7 @@ export function getGcsSeverity(
     } else if (numScore >= 6) {
       return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
     } else {
-      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
+      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-200" };
     }
   } else {
     if (numScore < 3 || numScore > 15) return null;
@@ -153,8 +153,113 @@ export function getGcsSeverity(
     } else if (numScore >= 9) {
       return { name: "中度 (Moderate)", color: "text-amber-700 bg-amber-50 border-amber-200" };
     } else {
-      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-250" };
+      return { name: "重度 (Severe)", color: "text-rose-700 bg-rose-50 border-rose-200" };
     }
   }
 }
+
+export interface GcsComputationResult {
+  totalDisplay: string; // e.g. "15分", "10分 (插管中)"
+  totalScoreValue: number | string | null; // For database storage
+  sumScore: number | null; // meaningful numeric score (3-15 or 2-10)
+  isUnscoreableV: boolean;
+  unscoreableReason: string; // "失語症" | "插管中" | "氣切" | ""
+  severity: { name: string; color: string } | null;
+  formula: string; // e.g. "E4 V5 M6" or "E4 V(e) M6"
+  isComplete: boolean;
+}
+
+/**
+ * Computes GCS sum, unscoreable verbal reason, and clinical severity.
+ */
+export function computeGcsResult(
+  eye: number | string | null | undefined,
+  verbal: number | string | null | undefined,
+  motor: number | string | null | undefined
+): GcsComputationResult {
+  const hasE = eye !== "" && eye != null;
+  const hasV = verbal !== "" && verbal != null;
+  const hasM = motor !== "" && motor != null;
+
+  const eNum = hasE ? Number(eye) : null;
+  const mNum = hasM ? Number(motor) : null;
+  
+  let vVal: number | string | null = null;
+  if (hasV) {
+    if (verbal === "a" || verbal === "e" || verbal === "t") {
+      vVal = verbal;
+    } else {
+      const parsed = Number(verbal);
+      vVal = isNaN(parsed) ? String(verbal) : parsed;
+    }
+  }
+
+  const isUnscoreableV = vVal === "a" || vVal === "e" || vVal === "t";
+  let reason = "";
+  if (vVal === "a") reason = "失語症";
+  else if (vVal === "e") reason = "插管中";
+  else if (vVal === "t") reason = "氣切";
+
+  const formulaParts = [
+    eNum !== null ? `E${eNum}` : "E-",
+    vVal !== null ? (isUnscoreableV ? `V(${vVal})` : `V${vVal}`) : "V-",
+    mNum !== null ? `M${mNum}` : "M-",
+  ];
+  const formula = formulaParts.join(" ");
+
+  if (!hasE && !hasV && !hasM) {
+    return {
+      totalDisplay: "未評估",
+      totalScoreValue: null,
+      sumScore: null,
+      isUnscoreableV: false,
+      unscoreableReason: "",
+      severity: null,
+      formula: "",
+      isComplete: false,
+    };
+  }
+
+  if (eNum !== null && mNum !== null && hasV) {
+    if (isUnscoreableV) {
+      const sumOther = eNum + mNum;
+      const sev = getGcsSeverity(sumOther, true);
+      return {
+        totalDisplay: `${sumOther}分 (${reason})`,
+        totalScoreValue: `${sumOther}分 (${reason})`,
+        sumScore: sumOther,
+        isUnscoreableV: true,
+        unscoreableReason: reason,
+        severity: sev,
+        formula,
+        isComplete: true,
+      };
+    } else if (typeof vVal === "number" && !isNaN(vVal)) {
+      const total = eNum + vVal + mNum;
+      const sev = getGcsSeverity(total, false);
+      return {
+        totalDisplay: `${total}分`,
+        totalScoreValue: total,
+        sumScore: total,
+        isUnscoreableV: false,
+        unscoreableReason: "",
+        severity: sev,
+        formula,
+        isComplete: true,
+      };
+    }
+  }
+
+  return {
+    totalDisplay: "未完成評估",
+    totalScoreValue: null,
+    sumScore: null,
+    isUnscoreableV,
+    unscoreableReason: reason,
+    severity: null,
+    formula,
+    isComplete: false,
+  };
+}
+
 
