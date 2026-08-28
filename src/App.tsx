@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { collection, onSnapshot, getDocs, doc, deleteDoc, setDoc, getDoc } from "firebase/firestore";
 import { db, handleFirestoreError, OperationType } from "./firebase";
 import { Patient, PTLog, ICU_MOBILITY_LEVELS } from "./types";
-import { sha256, generateSalt, getDaysBetween } from "./utils";
+import { sha256, generateSalt, getDaysBetween, getGcsSeverity } from "./utils";
 import StatisticsDashboard from "./components/StatisticsDashboard";
 import PatientDetailView from "./components/PatientDetailView";
 import AdminVerification from "./components/AdminVerification";
@@ -135,7 +135,17 @@ export default function App() {
   }, [patients, selectedPatientId]);
 
   // Sorting States
-  const [sortBy, setSortBy] = useState<"bedValue" | "name" | "chartNo" | "diagnosis" | "icuAdmissionDate" | "latestMobilityLevel" | "patientLogsCount">("bedValue");
+  const [sortBy, setSortBy] = useState<
+    | "bedValue"
+    | "name"
+    | "chartNo"
+    | "diagnosis"
+    | "erGcs"
+    | "icuGcs"
+    | "icuAdmissionDate"
+    | "latestMobilityLevel"
+    | "patientLogsCount"
+  >("bedValue");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
 
   const handleSort = (field: typeof sortBy) => {
@@ -152,6 +162,31 @@ export default function App() {
     return sortOrder === "asc" ? " ⬆" : " ⬇";
   };
 
+  /**
+   * Helper to compute numeric GCS score for accurate clinical sorting
+   */
+  function getPatientGcsScore(
+    eye?: number | null,
+    verbal?: number | string | null,
+    motor?: number | null,
+    total?: number | string | null
+  ): number {
+    if (eye != null && motor != null && (verbal === "a" || verbal === "e" || verbal === "t")) {
+      return Number(eye) + Number(motor);
+    }
+    if (eye != null && motor != null && verbal != null && typeof verbal === "number") {
+      return Number(eye) + Number(verbal) + Number(motor);
+    }
+    if (total != null && total !== "") {
+      if (typeof total === "number") return total;
+      const match = String(total).trim().match(/^(\d+)/);
+      if (match) return Number(match[1]);
+      const anyMatch = String(total).match(/(\d+)/);
+      if (anyMatch) return Number(anyMatch[1]);
+    }
+    return -1;
+  }
+
   // Filters and sorts patients list
   const sortedAndFilteredPatientsList = useMemo(() => {
     let list = [...patients];
@@ -164,7 +199,10 @@ export default function App() {
           p.name.toLowerCase().includes(query) ||
           p.bedValue.toLowerCase().includes(query) ||
           p.chartNo.toLowerCase().includes(query) ||
-          p.diagnosis.toLowerCase().includes(query)
+          p.diagnosis.toLowerCase().includes(query) ||
+          (p.erAdmissionDate && p.erAdmissionDate.toLowerCase().includes(query)) ||
+          (p.erGcsTotal != null && String(p.erGcsTotal).toLowerCase().includes(query)) ||
+          (p.icuGcsTotal != null && String(p.icuGcsTotal).toLowerCase().includes(query))
       );
     }
     
@@ -185,6 +223,27 @@ export default function App() {
       } else if (sortBy === "diagnosis") {
         valA = a.diagnosis;
         valB = b.diagnosis;
+      } else if (sortBy === "erGcs" || sortBy === "icuGcs") {
+        const isEr = sortBy === "erGcs";
+        const scoreA = isEr
+          ? getPatientGcsScore(a.erGcsEye, a.erGcsVerbal, a.erGcsMotor, a.erGcsTotal)
+          : getPatientGcsScore(a.icuGcsEye, a.icuGcsVerbal, a.icuGcsMotor, a.icuGcsTotal);
+        const scoreB = isEr
+          ? getPatientGcsScore(b.erGcsEye, b.erGcsVerbal, b.erGcsMotor, b.erGcsTotal)
+          : getPatientGcsScore(b.icuGcsEye, b.icuGcsVerbal, b.icuGcsMotor, b.icuGcsTotal);
+
+        // Put unassessed (-1) at the bottom regardless of sort order
+        if (scoreA === -1 && scoreB === -1) {
+          return a.bedValue.localeCompare(b.bedValue, "zh-Hant", { numeric: true });
+        }
+        if (scoreA === -1) return 1;
+        if (scoreB === -1) return -1;
+
+        const diff = scoreA - scoreB;
+        if (diff !== 0) {
+          return sortOrder === "asc" ? diff : -diff;
+        }
+        return a.bedValue.localeCompare(b.bedValue, "zh-Hant", { numeric: true });
       } else if (sortBy === "icuAdmissionDate") {
         valA = a.icuAdmissionDate || (a as any).admissionDate || "";
         valB = b.icuAdmissionDate || (b as any).admissionDate || "";
@@ -220,6 +279,60 @@ export default function App() {
     
     return list;
   }, [patients, searchQuery, sortBy, sortOrder, allLogs]);
+
+  /**
+   * Helper to render GCS score, formula and severity tag in the patient table
+   */
+  function renderGcsCell(
+    eye?: number | null,
+    verbal?: number | string | null,
+    motor?: number | null,
+    total?: number | string | null,
+    date?: string
+  ) {
+    if (total == null && eye == null && verbal == null && motor == null) {
+      return (
+        <span className="text-slate-350 text-[11px] font-mono">未評估</span>
+      );
+    }
+
+    const isUnsc = verbal === "a" || verbal === "e" || verbal === "t";
+    const sev = getGcsSeverity(total, isUnsc);
+
+    const formulaStr =
+      eye != null && verbal != null && motor != null
+        ? `E${eye}V${verbal}M${motor}`
+        : "";
+
+    return (
+      <div className="flex flex-col gap-0.5 min-w-[105px]">
+        <div className="flex items-center gap-1 font-mono text-[11px] font-bold text-slate-800">
+          {formulaStr ? (
+            <>
+              <span className="text-slate-500 font-semibold">{formulaStr} =</span>
+              <span className="text-slate-900">{typeof total === "number" ? `${total}分` : total}</span>
+            </>
+          ) : (
+            <span className="text-slate-900">{typeof total === "number" ? `${total}分` : total || "未計分"}</span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {sev ? (
+            <span className={`text-[8.5px] font-extrabold px-1.5 py-0.5 border rounded w-fit ${sev.color}`}>
+              {sev.name}
+            </span>
+          ) : (
+            <span className="text-[9px] text-slate-400 font-sans">無分級</span>
+          )}
+          {date && (
+            <span className="text-[9.5px] text-slate-400 font-mono" title="評估/里程日">
+              ({date})
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   /**
    * Delete Patient Profile with logs cleanup
@@ -536,61 +649,71 @@ export default function App() {
                   )}
                 </div>
 
-                {/* Patient List Grid Table */}
+                {/* Patient List Grid Table Card */}
                 <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                  <div className="overflow-x-auto">
+                  <div className="overflow-auto max-h-[calc(100vh-230px)] min-h-[380px] custom-scrollbar">
                     <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-250 text-slate-500 text-[11px] font-bold uppercase bg-slate-50/50 select-none">
-                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("bedValue")}>
-                            <div className="flex items-center justify-center gap-1">
+                      <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-xs select-none">
+                        <tr className="border-b border-slate-200 text-slate-500 text-[11px] font-bold uppercase bg-slate-50">
+                          <th className="py-3 px-3 w-px whitespace-nowrap text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("bedValue")}>
+                            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
                               床號 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("bedValue")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("name")}>
-                            <div className="flex items-center gap-1">
+                          <th className="py-3 px-3 w-px whitespace-nowrap cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("name")} title="點擊依姓名排序">
+                            <div className="flex items-center gap-1 whitespace-nowrap">
                               姓名 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("name")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("chartNo")}>
-                            <div className="flex items-center gap-1">
+                          <th className="py-3 px-3 w-px whitespace-nowrap cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("chartNo")}>
+                            <div className="flex items-center gap-1 whitespace-nowrap">
                               病歷號碼 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("chartNo")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("diagnosis")}>
+                          <th className="py-3 px-4 min-w-[140px] cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("diagnosis")}>
                             <div className="flex items-center gap-1">
                               診斷說明 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("diagnosis")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("icuAdmissionDate")}>
-                            <div className="flex items-center gap-1">
+                          <th className="py-3 px-3.5 w-px whitespace-nowrap cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("erGcs")} title="點擊依急診當天 GCS 總分進行升冪/降冪排序">
+                            <div className="flex items-center gap-1 whitespace-nowrap">
+                              急診 GCS <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("erGcs")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-3.5 w-px whitespace-nowrap cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("icuGcs")} title="點擊依入ICU當天 GCS 總分進行升冪/降冪排序">
+                            <div className="flex items-center gap-1 whitespace-nowrap">
+                              入ICU GCS <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("icuGcs")}</span>
+                            </div>
+                          </th>
+                          <th className="py-3 px-4 min-w-[240px] whitespace-nowrap cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("icuAdmissionDate")}>
+                            <div className="flex items-center gap-1 whitespace-nowrap">
                               照會里程日期 (照會/回覆/開案) <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("icuAdmissionDate")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("latestMobilityLevel")}>
-                            <div className="flex items-center justify-center gap-1">
+                          <th className="py-3 px-3 w-px whitespace-nowrap text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("latestMobilityLevel")}>
+                            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
                               最新體能級數 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("latestMobilityLevel")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors" onClick={() => handleSort("patientLogsCount")}>
-                            <div className="flex items-center justify-center gap-1">
+                          <th className="py-3 px-3 w-px whitespace-nowrap text-center cursor-pointer hover:bg-slate-100 hover:text-slate-800 transition-colors bg-slate-50" onClick={() => handleSort("patientLogsCount")}>
+                            <div className="flex items-center justify-center gap-1 whitespace-nowrap">
                               歷史記錄人次 <span className="text-[10px] text-teal-600 font-mono font-normal">{getSortIndicator("patientLogsCount")}</span>
                             </div>
                           </th>
-                          <th className="py-3 px-4 text-center text-slate-400">管理動作</th>
+                          <th className="py-3 px-4 w-px whitespace-nowrap text-center text-slate-400 bg-slate-50">管理動作</th>
                         </tr>
                       </thead>
                       
                       <tbody className="divide-y divide-slate-100 text-xs">
                         {loading ? (
                           <tr>
-                            <td colSpan={8} className="py-12 text-center text-slate-500 font-medium">
+                            <td colSpan={10} className="py-12 text-center text-slate-500 font-medium">
                               正在加載神經外科病患追蹤名單中...
                             </td>
                           </tr>
                         ) : sortedAndFilteredPatientsList.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="py-12 text-center text-slate-400 font-medium">
+                            <td colSpan={10} className="py-12 text-center text-slate-400 font-medium">
                               {searchQuery ? "找不到符合關鍵字的個案，請換個詞再試。" : "目前加護病房無追蹤名單，請登入管理者新增收案個案。"}
                             </td>
                           </tr>
@@ -612,19 +735,37 @@ export default function App() {
 
                             return (
                               <tr key={pat.id} className="hover:bg-slate-50/40">
-                                <td className="py-3 px-4 text-center whitespace-nowrap">
-                                  <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 text-slate-800 font-mono font-extrabold text-[11px] rounded">
+                                <td className="py-3 px-3 text-center whitespace-nowrap w-px">
+                                  <span className="px-2 py-0.5 bg-slate-100 border border-slate-300 text-slate-800 font-mono font-extrabold text-[11px] rounded whitespace-nowrap">
                                     {pat.bedValue}
                                   </span>
                                 </td>
-                                <td className="py-3 px-4 font-bold text-slate-800 text-sm whitespace-nowrap">
-                                  {pat.name}
+                                <td className="py-3 px-3 font-bold text-slate-800 text-sm whitespace-nowrap w-px">
+                                  <span className="inline-block whitespace-nowrap">{pat.name}</span>
                                 </td>
-                                <td className="py-3 px-4 font-mono text-slate-500 whitespace-nowrap">
+                                <td className="py-3 px-3 font-mono text-slate-500 whitespace-nowrap w-px">
                                   {isAdmin ? pat.chartNo : "******"}
                                 </td>
                                 <td className="py-3 px-4 max-w-[200px] truncate text-slate-600" title={pat.diagnosis}>
                                   {pat.diagnosis}
+                                </td>
+                                <td className="py-3 px-3.5 whitespace-nowrap w-px">
+                                  {renderGcsCell(
+                                    pat.erGcsEye,
+                                    pat.erGcsVerbal,
+                                    pat.erGcsMotor,
+                                    pat.erGcsTotal,
+                                    pat.erAdmissionDate
+                                  )}
+                                </td>
+                                <td className="py-3 px-3.5 whitespace-nowrap w-px">
+                                  {renderGcsCell(
+                                    pat.icuGcsEye,
+                                    pat.icuGcsVerbal,
+                                    pat.icuGcsMotor,
+                                    pat.icuGcsTotal,
+                                    pat.icuAdmissionDate || (pat as any).admissionDate
+                                  )}
                                 </td>
                                 <td className="py-3 px-4 whitespace-nowrap">
                                   <div className="flex flex-col gap-0.5 text-[11px] font-mono text-slate-600">
@@ -669,7 +810,7 @@ export default function App() {
                                     </div>
                                   </div>
                                 </td>
-                                <td className="py-3 px-4">
+                                <td className="py-3 px-3 whitespace-nowrap w-px">
                                   {latestLog ? (
                                     <div className="flex items-center justify-center gap-1.5" title={levelInfo?.definition}>
                                       <span className="w-5.5 h-5.5 rounded-full flex items-center justify-center bg-teal-500 text-white font-mono font-bold text-[10px]">
@@ -680,13 +821,13 @@ export default function App() {
                                   ) : patLogsCount > 0 ? (
                                     <div className="text-center text-slate-400 text-[11px] font-medium">未介入不需評估</div>
                                   ) : (
-                                    <div className="text-center text-slate-350 text-[11px]">未開案</div>
+                                    <div className="text-center text-slate-355 text-[11px]">未開案</div>
                                   )}
                                 </td>
-                                <td className="py-3 px-4 text-center font-mono font-bold text-slate-500 whitespace-nowrap">
+                                <td className="py-3 px-3 text-center font-mono font-bold text-slate-500 whitespace-nowrap w-px">
                                   {patLogsCount} 次
                                 </td>
-                                <td className="py-2.5 px-4 text-center whitespace-nowrap">
+                                <td className="py-2.5 px-4 text-center whitespace-nowrap w-px">
                                   <div className="inline-flex items-center gap-2">
                                     <button
                                       onClick={() => setSelectedPatientId(pat.id)}
